@@ -142,6 +142,20 @@ class TeslaShareCard extends HTMLElement {
     this._call("number", "set_value", ent, { value: Number(el.value) });
   }
 
+  _carSvg(charging) {
+    const hot = /charg/i.test(charging || "") && !/complete|idle|disconnected|stopped/i.test(charging || "");
+    return `<svg viewBox="0 0 640 220" class="car-svg${hot ? " charging" : ""}" aria-hidden="true">
+      <path d="M78 148c18-46 62-78 118-86 28-4 46-4 74 2 22 5 40 6 70 6 48 0 86 10 118 32 24 16 40 28 62 28 10 0 18-2 28-6l14 10c-16 10-34 14-52 12-22-2-36-12-54-24-28-18-58-28-100-30-34-2-52-2-78 4-42 8-78 34-98 72l-8 16H78z" fill="#f4f4f4"/>
+      <path d="M168 78c22-8 48-10 78-8 18 1 34 2 52 6v28c-22-6-46-8-70-6-20 2-40 8-58 18l-2-38z" fill="#1a1a1c"/>
+      <path d="M302 78c16 2 34 6 52 14 10 4 16 8 22 12v22c-14-8-32-14-52-16-12-1-22 0-30 2V78h8z" fill="#141416"/>
+      <circle cx="196" cy="156" r="28" fill="#0a0a0a" stroke="#f4f4f4" stroke-width="8"/>
+      <circle cx="196" cy="156" r="10" fill="#3a3a3c"/>
+      <circle cx="430" cy="156" r="28" fill="#0a0a0a" stroke="#f4f4f4" stroke-width="8"/>
+      <circle cx="430" cy="156" r="10" fill="#3a3a3c"/>
+      <path class="bolt" d="M250 146h46l-10 16h28l-40 36 10-22h-26l12-30z" fill="#e82127"/>
+    </svg>`;
+  }
+
   _ctrl(carIndex, key, label, act, on) {
     return `<button class="ctrl${on ? " on" : ""}" data-car="${carIndex}" data-key="${key}" data-act="${act}"><span>${esc(label)}</span></button>`;
   }
@@ -186,6 +200,7 @@ class TeslaShareCard extends HTMLElement {
     return `
       <article class="car">
         <header><b>${esc(car.name)}</b><span>${esc(charging)}</span></header>
+        <div class="visual">${this._carSvg(charging)}</div>
         <div class="soc">${soc == null ? "—" : soc}<small>%</small></div>
         <div class="bar"><i style="width:${width}%"></i></div>
         <div class="meta">
@@ -240,7 +255,11 @@ class TeslaShareCard extends HTMLElement {
         header { display: flex; justify-content: space-between; align-items: baseline; }
         header b { font-size: 18px; font-weight: 580; }
         header span, .meta { color: #9a9a9e; font-size: 13px; }
-        .soc { font-size: 64px; line-height: .9; font-weight: 560; margin: 10px 0 6px; }
+        .visual { margin: 6px 0 2px; }
+        .car-svg { width: 100%; height: 92px; display: block; }
+        .car-svg .bolt { opacity: 0; }
+        .car-svg.charging .bolt { opacity: 1; }
+        .soc { font-size: 64px; line-height: .9; font-weight: 560; margin: 4px 0 6px; }
         .soc small { font-size: 22px; color: #9a9a9e; }
         .bar { height: 6px; background: #2c2c2e; border-radius: 99px; overflow: hidden; }
         .bar i { display: block; height: 100%; background: linear-gradient(90deg, #e82127, #fff 42%); }
