@@ -99,7 +99,8 @@ class TeslaShareCard extends HTMLElement {
 
   _call(domainName, service, entity, data) {
     if (!entity || !this._hass) return;
-    this._hass.callService(domainName, service, { entity_id: entity.id, ...(data || {}) });
+    const actualDomain = entity.id.split(".")[0];
+    this._hass.callService(domainName || actualDomain, service, { entity_id: entity.id, ...(data || {}) });
   }
 
   _toggleLock(ent) {
@@ -125,8 +126,9 @@ class TeslaShareCard extends HTMLElement {
     if (!btn) return;
     if (btn.dataset.act === "color") {
       const color = btn.dataset.color || btn.value;
-      try { localStorage.setItem("tesla-share-color", color); } catch (e) {}
-      this._config = { ...(this._config || {}), color };
+      const car = this._cars?.[Number(btn.dataset.car)];
+      const key = car?.device_id || car?.id || car?.name || "tesla";
+      try { localStorage.setItem("tesla-share-color:" + key, color); } catch (e) {}
       this._render();
       return;
     }
@@ -144,8 +146,9 @@ class TeslaShareCard extends HTMLElement {
   _onInput(ev) {
     const el = ev.target;
     if (el.dataset.act === "color") {
-      try { localStorage.setItem("tesla-share-color", el.value); } catch (e) {}
-      this._config = { ...(this._config || {}), color: el.value };
+      const car = this._cars?.[Number(el.dataset.car)];
+      const key = car?.device_id || car?.id || car?.name || "tesla";
+      try { localStorage.setItem("tesla-share-color:" + key, el.value); } catch (e) {}
       this._render();
       return;
     }
@@ -156,13 +159,17 @@ class TeslaShareCard extends HTMLElement {
     this._call("number", "set_value", ent, { value: Number(el.value) });
   }
 
-  _color() {
-    const fromConfig = this._config && this._config.color;
-    if (fromConfig) return fromConfig;
-    try { return localStorage.getItem("tesla-share-color") || "#f4f4f4"; } catch (e) { return "#f4f4f4"; }
+  _color(car) {
+    const key = car?.device_id || car?.id || car?.name || "tesla";
+    const colors = this._config?.colors || {};
+    if (colors[key]) return colors[key];
+    if (car?.name && colors[car.name]) return colors[car.name];
+    try { return localStorage.getItem("tesla-share-color:" + key) || this._config?.color || "#f4f4f4"; } catch (e) { return this._config?.color || "#f4f4f4"; }
   }
 
-  _carSvg(charging, windowsOpen, color) {
+  _carSvg(car, charging, windowsOpen, color) {
+    const image = this._config?.images?.[car.name] || this._config?.images?.[car.id] || this._config?.images?.[car.model];
+    if (image) return `<div class="vehicle-photo"><img src="${esc(image)}" alt="${esc(car.name)}"></div>`;
     const hot = /charg/i.test(charging || "") && !/complete|idle|disconnected|stopped/i.test(charging || "");
     const paint = color || "#f4f4f4";
     const glass = windowsOpen ? "none" : "#1a1a1c";
@@ -181,10 +188,10 @@ class TeslaShareCard extends HTMLElement {
     </svg>`;
   }
 
-  _swatches() {
+  _swatches(car, index) {
     const colors = ["#f4f4f4", "#171a20", "#e82127", "#3e6ae1", "#9a9a9e", "#c4a574"];
-    const current = this._color();
-    return `<div class="colors">${colors.map((c) => `<button class="swatch${c.toLowerCase() === String(current).toLowerCase() ? " on" : ""}" data-act="color" data-color="${c}" style="background:${c}"></button>`).join("")}<input class="picker" data-act="color" type="color" value="${/^#([0-9a-f]{6})$/i.test(current) ? current : "#f4f4f4"}"></div>`;
+    const current = this._color(car);
+    return `<div class="colors">${colors.map((c) => `<button class="swatch${c.toLowerCase() === String(current).toLowerCase() ? " on" : ""}" data-car="${index}" data-act="color" data-color="${c}" style="background:${c}"></button>`).join("")}<input class="picker" data-car="${index}" data-act="color" type="color" value="${/^#([0-9a-f]{6})$/i.test(current) ? current : "#f4f4f4"}"></div>`;
   }
 
   _ctrl(carIndex, key, label, act, on) {
@@ -231,8 +238,8 @@ class TeslaShareCard extends HTMLElement {
     return `
       <article class="car">
         <header><b>${esc(car.name)}</b><span>${esc(charging)}</span></header>
-        <div class="visual">${this._carSvg(charging, stateOf(hass, p.windows) === "open", this._color())}</div>
-        ${this._swatches()}
+        <div class="visual">${this._carSvg(car, charging, stateOf(hass, p.windows) === "open", this._color(car))}</div>
+        ${this._swatches(car, index)}
         <div class="soc">${soc == null ? "—" : soc}<small>%</small></div>
         <div class="bar"><i style="width:${width}%"></i></div>
         <div class="meta">
@@ -314,7 +321,7 @@ class TeslaShareCard extends HTMLElement {
         .rows div { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid #242424; font-size: 14px; }
         .rows span { color: #9a9a9e; }
         .empty { color: #9a9a9e; line-height: 1.4; }
-      </style>
+      .wrap{background:#000!important;color:#fff;border-radius:22px!important;padding:4px!important;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif!important;letter-spacing:-.02em}.car{background:#181818!important;border:1px solid #292929!important;border-radius:20px!important;padding:0!important;margin:8px!important;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,.28)}.car header{padding:18px 18px 0!important;font-size:19px!important}.car header span{color:#8f8f93!important;font-size:12px!important}.visual{margin:0!important;padding:14px 18px 0!important;height:190px;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#252525 0,#1a1a1a 48%,#181818 75%)!important}.car-svg{height:175px!important;filter:drop-shadow(0 18px 15px rgba(0,0,0,.45))}.colors{padding:0 18px 12px!important;gap:10px!important}.soc{font-size:64px!important;font-weight:600!important;letter-spacing:-.055em!important;margin:0 18px 8px!important}.bar{margin:0 18px!important;height:5px!important;background:#333!important}.bar i{background:#fff!important}.meta{padding:10px 18px 14px!important;margin:0!important;gap:18px!important}.controls{padding:14px 12px!important;grid-template-columns:repeat(4,1fr)!important;gap:7px!important;border-top:1px solid #292929}.ctrl{min-height:62px;border-radius:13px;background:#232323;border:0!important;font-size:10px!important}.ctrl.on{background:#252d3a!important;border:0!important}.sliders{padding:15px 18px 12px!important;margin:0!important;border-top:1px solid #292929}.rows{padding:4px 18px 12px!important;margin:0!important;border-top:1px solid #292929}.rows div{border-bottom:1px solid #242424;border-top:0!important;padding:9px 0!important}</style>
       <div class="wrap">${body}${energy}</div>`;
     this.shadowRoot.querySelector(".wrap").onclick = (ev) => this._onClick(ev);
     this.shadowRoot.querySelector(".wrap").onchange = (ev) => this._onInput(ev);
