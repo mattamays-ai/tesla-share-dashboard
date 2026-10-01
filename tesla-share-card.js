@@ -136,7 +136,7 @@ class TeslaShareCard extends HTMLElement {
   connectedCallback(){if(!this.shadowRoot)this.attachShadow({mode:"open"});this._render()}
   set hass(h){
     this._hass=h;
-    if(!this._registryReady)this._loadRegistry();
+    if(!this._registryReady && Date.now() >= (this._registryRetryAt||0)) this._loadRegistry();
     else this._syncRegistryStates();
     this._render();
     this._historyLoad();
@@ -153,7 +153,8 @@ class TeslaShareCard extends HTMLElement {
       await this._historyLoad();
     }catch(e){
       this._registry={entities:[],devices:{}};
-      this._registryReady=true;
+      this._registryReady=false;
+      this._registryRetryAt=Date.now()+10000;
       this._render();
     }finally{
       this._registryLoading=false;
@@ -212,7 +213,8 @@ class TeslaShareCard extends HTMLElement {
     if(!ids.length)return;
     const days=Math.max(1,Math.min(30,+this._config?.history_days||7));
     const key=days+"|"+ids.join(",");
-    if(this._historyKey===key)return;
+    const ttl=Math.max(60000,Math.min(900000,+this._config?.history_ttl_ms||300000));
+    if(this._historyKey===key && Date.now()-(this._historyAt||0)<ttl)return;
     this._historyLoading=true;
     this._historyKey=key;
     try{
@@ -226,6 +228,7 @@ class TeslaShareCard extends HTMLElement {
         significant_changes_only:false
       });
       this._history=rows||{};
+      this._historyAt=Date.now();
       this._render();
     }catch(e){
       this._historyKey="";
