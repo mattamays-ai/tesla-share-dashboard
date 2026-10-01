@@ -1,43 +1,63 @@
 # Tesla Share
 
-A Tesla-inspired Home Assistant vehicle dashboard for Tesla Custom and Tesla Fleet.
-
-The v2 card is intentionally designed around the visual language of the Tesla vehicle app: dark vehicle stage, large battery readout, restrained status information, compact vehicle actions, and charging controls.
+A Tesla-inspired Home Assistant vehicle command center for Tesla Custom and Tesla Fleet.
 
 ## Card
 
 ```yaml
 type: custom:tesla-share-card
-colors:
-  Model Y: "#171A20"
-  Model 3: "#E82127"
-images:
-  Model Y: /local/tesla/model-y.png
-  Model 3: /local/tesla/model-3.png
 ```
 
-### Visual configuration
+No image configuration is required. Tesla Share automatically uses built-in vehicle artwork based on the detected Tesla model.
 
-- `colors` accepts a Home Assistant device name or model key.
-- Paint selections made in the card are remembered separately for each vehicle.
-- `images` lets you use your own vehicle side-profile photo. The configured image is shown instead of the fallback SVG.
-- Put photos in `/config/www/tesla/` so `/local/tesla/...` works.
-- A dark, side-profile image with transparent or dark surroundings works best.
+Optional:
 
-### What is shown
+```yaml
+type: custom:tesla-share-card
+history_days: 7
+colors:
+  My Model Y: "#171A20"
+```
 
-- Battery percentage and range
-- Charging state, power, and time remaining when available
-- Cabin and outside temperature
-- Lock, climate, frunk, trunk, charge-port, windows, Sentry, horn, flash, wake, and refresh controls when the corresponding entities exist
-- Charge limit and charging-amp sliders when exposed by the integration
-- Per-vehicle paint selection
+## v3 vehicle command center
 
-The card discovers Tesla entities from `tesla_custom` and `tesla_fleet` and groups them by Home Assistant device.
+Each Tesla gets a live vehicle screen with:
 
-## Design direction
+- Built-in Model 3, Model Y, Model S, Model X, and Cybertruck artwork
+- Automatic vehicle/model discovery
+- Battery percentage, range, charge limit, charging power, amps, energy added, and time remaining
+- Charging state and visual charging animation
+- Lock state
+- Climate state and cabin/outside temperature
+- Sentry Mode
+- Charge-port state
+- Frunk and trunk state
+- Windows state
+- Individual door/window states when the Tesla integration exposes them
+- Wake, refresh, flash, horn, and remote-start actions when available
+- Charge-limit and charging-amp controls when available
+- Live GPS coordinates and the integration's location/address attributes
+- Recorder-backed location history with a route view
 
-Tesla's product UI is used as the design reference, not copied pixel-for-pixel. The goal is a native-feeling Tesla experience inside Home Assistant while retaining Home Assistant's real-time entity state and controls.
+### Location history
+
+The card queries Home Assistant Recorder history for the vehicle's `device_tracker` entity. Set:
+
+```yaml
+history_days: 30
+```
+
+to inspect up to 30 days of retained history.
+
+The history is not stored in browser localStorage. It comes from Home Assistant, so it can survive browser changes and card reloads. Actual history length depends on Home Assistant Recorder retention and whether the Tesla integration records latitude/longitude attributes.
+
+If GPS coordinates are not exposed by the selected Tesla integration, the live vehicle state still works and the history panel explains why route data is unavailable.
+
+## Automatic discovery
+
+Tesla Share discovers entities from `tesla_custom` and `tesla_fleet`, groups them by Home Assistant device, and only renders controls supported by the entities it finds.
+
+That means one card can show multiple Teslas without manually entering entity IDs.
 
 ## HACS
 
@@ -51,6 +71,10 @@ type: custom:tesla-share-card
 
 Home Assistant 2024.8.0 or newer, matching the HACS manifest.
 
+## Design
+
+Tesla's product UI is used as the design reference, not copied pixel-for-pixel. The goal is a restrained, vehicle-first experience inside Home Assistant while retaining Home Assistant's live state, controls, Recorder history, and integration-specific capabilities.
+
 ## Development
 
-The active redesign lives on the `v2-tesla-app-ui` branch. `main` remains unchanged until the redesign is reviewed and tested on a real Home Assistant instance.
+The v3 vehicle command center is developed on the `v3-vehicle-command-center` branch before review and merge into `main`.
