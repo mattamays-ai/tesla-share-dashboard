@@ -83,251 +83,109 @@ function num(hass, ent) {
   return Number.isFinite(n) ? n : null;
 }
 
+
+function vehicleModel(hass, deviceId, entities) {
+  const d = hass.devices?.[deviceId] || {};
+  const text = [d.model,d.name,d.name_by_user,...entities.map(e=>e.state?.attributes?.model)].filter(Boolean).join(" ");
+  return ["Model 3","Model Y","Model S","Model X","Cybertruck","Roadster"].find(m=>new RegExp("\\b"+m.replace(" ","\\s+")+"\\b","i").test(text)) || "Tesla";
+}
+function coords(hass, ent) {
+  const a = ent ? hass.states?.[ent.id]?.attributes || {} : {};
+  const lat=Number(a.latitude), lon=Number(a.longitude);
+  return Number.isFinite(lat)&&Number.isFinite(lon)?{lat,lon}:null;
+}
+function titleState(s){const x=String(s||"").replace(/_/g," ");return x?x[0].toUpperCase()+x.slice(1):"Unknown";}
+function openState(s){return /^(open|opening|on|true|unlocked)$/i.test(String(s));}
 class TeslaShareCard extends HTMLElement {
-  static getConfigElement() { return null; }
-  setConfig(config) { this._config = config || {}; }
-  set hass(hass) {
-    this._hass = hass;
-    this._render();
+  static getConfigElement(){return null}
+  setConfig(config){this._config=config||{}}
+  getCardSize(){return 12}
+  connectedCallback(){if(!this.shadowRoot)this.attachShadow({mode:"open"});this._render()}
+  set hass(h){this._hass=h;this._render();this._historyLoad()}
+  _service(ent,service,data={}){
+    if(!ent||!this._hass)return;
+    const d=ent.id.split(".")[0];
+    this._hass.callService(d,service,{entity_id:ent.id,...data});
   }
-  getCardSize() { return 8; }
-
-  connectedCallback() {
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    this._render();
+  _action(ent,kind){
+    if(!ent)return;
+    const d=ent.id.split(".")[0], s=stateOf(this._hass,ent);
+    if(kind==="toggle"){
+      const service=d==="lock"?(s==="locked"?"unlock":"lock"):d==="switch"?(s==="on"?"turn_off":"turn_on"):d==="climate"?(s==="off"?"turn_on":"turn_off"):d==="cover"?(openState(s)?"close_cover":"open_cover"):null;
+      if(service)this._service(ent,service);
+    } else if(kind==="press") this._service(ent,"press");
   }
-
-  _call(domainName, service, entity, data) {
-    if (!entity || !this._hass) return;
-    const actualDomain = entity.id.split(".")[0];
-    this._hass.callService(domainName || actualDomain, service, { entity_id: entity.id, ...(data || {}) });
+  _color(car){
+    const key=car.device_id||car.id||car.name,cfg=this._config?.colors||{};
+    if(cfg[key])return cfg[key]; if(cfg[car.name])return cfg[car.name];
+    try{return localStorage.getItem("tesla-share-color:"+key)||"#f4f4f4"}catch{return "#f4f4f4"}
   }
-
-  _toggleLock(ent) {
-    const st = stateOf(this._hass, ent);
-    this._call("lock", st === "locked" ? "unlock" : "lock", ent);
+  _onClick(e){
+    const b=e.target.closest("[data-act]");if(!b)return;
+    const car=this._cars?.[+b.dataset.car];if(!car)return;
+    if(b.dataset.act==="color"){try{localStorage.setItem("tesla-share-color:"+(car.device_id||car.id||car.name),b.dataset.color||b.value)}catch{}this._render();return}
+    this._action(car.picked?.[b.dataset.key],b.dataset.act);
   }
-  _toggleClimate(ent) {
-    const st = stateOf(this._hass, ent);
-    this._call("climate", st === "off" ? "turn_on" : "turn_off", ent);
+  _onChange(e){
+    const x=e.target,car=this._cars?.[+x.dataset.car];if(!car)return;
+    if(x.dataset.act==="color"){try{localStorage.setItem("tesla-share-color:"+(car.device_id||car.id||car.name),x.value)}catch{}this._render();return}
+    const ent=car.picked?.[x.dataset.key];if(!ent)return;
+    const d=ent.id.split(".")[0];if(x.type==="range")this._service(ent,d==="number"?"set_value":"set_value",{value:+x.value});
   }
-  _toggleSwitch(ent) {
-    const st = stateOf(this._hass, ent);
-    this._call("switch", st === "on" ? "turn_off" : "turn_on", ent);
+  _stockCar(car,charging,open){
+    const p=this._color(car),m=car.model;
+    const shape=m==="Cybertruck"?"M65 145L120 72L360 58L505 74L575 116L595 145L560 158H90Z":
+      m==="Model S"?"M65 147C90 95 150 73 255 70L430 77C505 82 550 108 590 142L565 160H92Z":
+      m==="Model X"?"M65 147C90 91 150 69 250 68L430 74C505 78 550 106 590 142L565 160H92Z":
+      "M65 147C90 98 145 77 230 72L425 77C505 80 550 106 590 142L565 160H92Z";
+    return '<svg viewBox="0 0 640 220" class="car-svg '+(charging?"charging ":"")+(open?"open":"")+'"><path d="'+shape+'" fill="'+p+'"/><path d="M160 82C220 67 330 68 405 78C450 83 480 96 515 116H168Z" fill="#17181b"/><circle cx="175" cy="158" r="27" fill="#080808" stroke="'+p+'" stroke-width="8"/><circle cx="465" cy="158" r="27" fill="#080808" stroke="'+p+'" stroke-width="8"/><circle class="charge" cx="112" cy="133" r="7" fill="#3e6ae1"/><path class="bolt" d="M250 140h42l-10 17h28l-40 38 10-22h-27z" fill="#e82127"/>'+(open?'<path d="M190 112V73M360 112V76" stroke="'+p+'" stroke-width="5" stroke-linecap="round"/>':"")+'</svg>';
   }
-  _toggleCover(ent) {
-    const st = stateOf(this._hass, ent);
-    this._call("cover", st === "open" ? "close_cover" : "open_cover", ent);
+  _swatches(car,i){
+    const cs=["#f4f4f4","#171a20","#e82127","#3e6ae1","#9a9a9e","#c4a574"],cur=this._color(car);
+    return '<div class="colors">'+cs.map(x=>'<button class="swatch '+(x.toLowerCase()===cur.toLowerCase()?"on":"")+'" data-car="'+i+'" data-act="color" data-color="'+x+'" style="background:'+x+'"></button>').join("")+'<input class="picker" data-car="'+i+'" data-act="color" type="color" value="'+(/^#[0-9a-f]{6}$/i.test(cur)?cur:"#f4f4f4")+'"></div>';
   }
-  _press(ent) { this._call("button", "press", ent); }
-
-  _onClick(ev) {
-    const btn = ev.target.closest("[data-act]");
-    if (!btn) return;
-    if (btn.dataset.act === "color") {
-      const color = btn.dataset.color || btn.value;
-      const car = this._cars?.[Number(btn.dataset.car)];
-      const key = car?.device_id || car?.id || car?.name || "tesla";
-      try { localStorage.setItem("tesla-share-color:" + key, color); } catch (e) {}
-      this._render();
-      return;
-    }
-    if (!this._cars) return;
-    const car = this._cars[Number(btn.dataset.car)];
-    const ent = car?.picked?.[btn.dataset.key];
-    const act = btn.dataset.act;
-    if (act === "lock") this._toggleLock(ent);
-    else if (act === "climate") this._toggleClimate(ent);
-    else if (act === "switch") this._toggleSwitch(ent);
-    else if (act === "cover") this._toggleCover(ent);
-    else if (act === "press") this._press(ent);
+  _btn(i,key,label,act="toggle",on=false){return '<button class="ctrl '+(on?"on":"")+'" data-car="'+i+'" data-key="'+key+'" data-act="'+act+'"><span>'+esc({lock:"🔒",climate:"◌",sentry:"◉",port:"ϟ",frunk:"▱",trunk:"▱",windows:"▥",wake:"↻",refresh:"↻",flash:"✦",horn:"♬",start:"▶"}[key]||"•")+'</span><small>'+esc(label)+'</small></button>'}
+  async _historyLoad(){
+    if(this._historyLoading||!this._hass?.callWS||!this._cars?.length)return;
+    const ids=this._cars.map(c=>c.picked.tracker?.id).filter(Boolean);if(!ids.length)return;
+    this._historyLoading=true;
+    try{
+      const days=Math.max(1,Math.min(30,+this._config?.history_days||7));
+      const rows=await this._hass.callWS({type:"history/history_during_period",start_time:new Date(Date.now()-days*86400000).toISOString(),end_time:new Date().toISOString(),entity_ids:ids,minimal_response:false,significant_changes_only:false});
+      this._history=rows||{};this._render();
+    }catch(e){}finally{this._historyLoading=false}
   }
-
-  _onInput(ev) {
-    const el = ev.target;
-    if (el.dataset.act === "color") {
-      const car = this._cars?.[Number(el.dataset.car)];
-      const key = car?.device_id || car?.id || car?.name || "tesla";
-      try { localStorage.setItem("tesla-share-color:" + key, el.value); } catch (e) {}
-      this._render();
-      return;
-    }
-    if (!el.dataset.key || !this._cars) return;
-    const car = this._cars[Number(el.dataset.car)];
-    const ent = car?.picked?.[el.dataset.key];
-    if (!ent) return;
-    this._call("number", "set_value", ent, { value: Number(el.value) });
+  _route(car){
+    const rows=this._history?.[car.picked.tracker?.id]||[],pts=rows.map(x=>{const a=x.attributes||{},lat=+a.latitude,lon=+a.longitude;return Number.isFinite(lat)&&Number.isFinite(lon)?{lat,lon}:null}).filter(Boolean);
+    if(pts.length<2)return '<div class="map-empty">GPS history appears here when Recorder retains latitude/longitude.</div>';
+    const la=pts.map(p=>p.lat),lo=pts.map(p=>p.lon),a=Math.min(...la),b=Math.max(...la),c=Math.min(...lo),d=Math.max(...lo),sx=x=>24+(x-c)/Math.max(d-c,.00001)*352,sy=y=>176-(y-a)/Math.max(b-a,.00001)*136;
+    const path=pts.map((p,i)=>(i?"L":"M")+sx(p.lon).toFixed(1)+" "+sy(p.lat).toFixed(1)).join(" "),q=pts[pts.length-1];
+    return '<svg class="route" viewBox="0 0 400 200"><path d="'+path+'" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="'+sx(q.lon)+'" cy="'+sy(q.lat)+'" r="6" fill="#e82127"/></svg>';
   }
-
-  _color(car) {
-    const key = car?.device_id || car?.id || car?.name || "tesla";
-    const colors = this._config?.colors || {};
-    if (colors[key]) return colors[key];
-    if (car?.name && colors[car.name]) return colors[car.name];
-    try { return localStorage.getItem("tesla-share-color:" + key) || this._config?.color || "#f4f4f4"; } catch (e) { return this._config?.color || "#f4f4f4"; }
+  _carHtml(car,i,h){
+    const p=car.picked,soc=num(h,p.battery),range=stateOf(h,p.range),charging=stateOf(h,p.charging),inside=stateOf(h,p.inside),outside=stateOf(h,p.outside);
+    const locked=stateOf(h,p.lock)==="locked",climate=p.climate&&stateOf(h,p.climate)!=="off",sentry=stateOf(h,p.sentry)==="on";
+    const port=openState(stateOf(h,p.port)),frunk=openState(stateOf(h,p.frunk)),trunk=openState(stateOf(h,p.trunk)),windows=openState(stateOf(h,p.windows));
+    const active=/charging|starting/i.test(charging)&&!/complete|stopped|disconnected/i.test(charging),width=soc==null?0:Math.max(0,Math.min(100,soc));
+    const t=p.tracker,attrs=t?h.states[t.id]?.attributes||{}:{},cc=coords(h,t),address=attrs.address||attrs.location_name||stateOf(h,t)||"Location unavailable";
+    const doors=[["doorDriver","Driver",p.doorDriver],["doorPassenger","Passenger",p.doorPassenger],["doorRearLeft","Rear left",p.doorRearLeft],["doorRearRight","Rear right",p.doorRearRight]].filter(x=>x[2]);
+    const wins=[["windowDriver","Driver",p.windowDriver],["windowPassenger","Passenger",p.windowPassenger],["windowRear","Rear",p.windowRear]].filter(x=>x[2]);
+    const controls=[p.lock&&this._btn(i,"lock",locked?"Locked":"Unlocked","toggle",locked),p.climate&&this._btn(i,"climate",climate?"Climate on":"Climate","toggle",climate),p.sentry&&this._btn(i,"sentry","Sentry","toggle",sentry),p.port&&this._btn(i,"port",port?"Close port":"Charge port","toggle",port),p.frunk&&this._btn(i,"frunk",frunk?"Close frunk":"Frunk","toggle",frunk),p.trunk&&this._btn(i,"trunk",trunk?"Close trunk":"Trunk","toggle",trunk),p.wake&&this._btn(i,"wake","Wake","press"),p.refresh&&this._btn(i,"refresh","Refresh","press"),p.flash&&this._btn(i,"flash","Flash","press"),p.horn&&this._btn(i,"horn","Honk","press"),p.start&&this._btn(i,"start","Start","press")].filter(Boolean).join("");
+    const rows='<div><span>Charge port</span><b class="'+(port?"alert":"")+'">'+(port?"OPEN":"Closed")+'</b></div><div><span>Frunk</span><b class="'+(frunk?"alert":"")+'">'+(frunk?"OPEN":"Closed")+'</b></div><div><span>Trunk</span><b class="'+(trunk?"alert":"")+'">'+(trunk?"OPEN":"Closed")+'</b></div><div><span>Windows</span><b class="'+(windows?"alert":"")+'">'+(windows?"OPEN / VENTED":"Closed")+'</b></div>'+doors.map(x=>'<div><span>'+esc(x[1])+' door</span><b class="'+(openState(stateOf(h,x[2]))?"alert":"")+'">'+esc(titleState(stateOf(h,x[2])))+'</b></div>').join("")+wins.map(x=>'<div><span>'+esc(x[1])+' window</span><b class="'+(openState(stateOf(h,x[2]))?"alert":"")+'">'+esc(titleState(stateOf(h,x[2])))+'</b></div>').join("");
+    const hist=this._route(car);
+    const climateAttrs=p.climate?h.states[p.climate.id]?.attributes||{}:{};
+    return '<article class="car"><header><div><b>'+esc(car.name)+'</b><small>'+esc(car.model)+'</small></div><span class="state '+(active?"charge":"")+'">'+(active?"Charging":stateOf(h,p.asleep)==="on"?"Asleep":"Parked")+'</span></header><div class="visual">'+this._stockCar(car,active,windows||port||frunk||trunk)+'</div>'+this._swatches(car,i)+'<div class="battery"><strong>'+(soc==null?"—":soc)+'<small>%</small></strong><span>'+esc(range||"—")+' '+esc(p.range?h.states[p.range.id]?.attributes?.unit_of_measurement||"":"")+'</span></div><div class="bar"><i style="width:'+width+'%"></i></div><div class="meta"><span><b>'+esc(inside||"—")+'</b> cabin</span><span><b>'+esc(outside||"—")+'</b> outside</span><span><b>'+esc(stateOf(h,p.power)||"—")+'</b> power</span></div><section><div class="title"><b>📍 Location</b><small>'+(cc?cc.lat.toFixed(5)+", "+cc.lon.toFixed(5):"GPS unavailable")+'</small></div><strong class="address">'+esc(address)+'</strong></section><section><div class="title"><b>Vehicle</b><small>Live state</small></div><div class="states">'+rows+'</div></section><section><div class="title"><b>Controls</b><small>Tap to command</small></div><div class="controls">'+controls+'</div></section>'+(p.climate?'<div class="climate"><span>Climate <b>'+(climate?"ON":"OFF")+'</b></span><span>Cabin <b>'+esc(inside||"—")+'</b></span><span>Outside <b>'+esc(outside||"—")+'</b></span><span>Mode <b>'+esc(climateAttrs.hvac_action||"—")+'</b></span></div>':"")+'<section><div class="title"><b>Charging</b><small>'+esc(charging||"Unknown")+'</small></div><div class="chargegrid"><span>Limit <b>'+esc(num(h,p.limit)??"—")+'%</b></span><span>Amps <b>'+esc(num(h,p.amps)??"—")+'</b></span><span>Added <b>'+esc(stateOf(h,p.added)||"—")+'</b></span><span>Time <b>'+esc(stateOf(h,p.timeLeft)||"—")+'</b></span></div>'+(p.limit?'<label>Charge limit <b>'+esc(num(h,p.limit)??"—")+'%</b><input data-car="'+i+'" data-key="limit" type="range" min="50" max="100" value="'+(num(h,p.limit)??80)+'"></label>':"")+(p.amps?'<label>Amps <b>'+esc(num(h,p.amps)??"—")+'</b><input data-car="'+i+'" data-key="amps" type="range" min="1" max="48" value="'+(num(h,p.amps)??5)+'"></label>':"")+'</section><section><div class="title"><b>Location history</b><small>'+esc(this._config?.history_days||7)+' days</small></div>'+hist+'</section></article>';
   }
-
-  _carSvg(car, charging, windowsOpen, color) {
-    const image = this._config?.images?.[car.name] || this._config?.images?.[car.id] || this._config?.images?.[car.model];
-    if (image) return `<div class="vehicle-photo"><img src="${esc(image)}" alt="${esc(car.name)}"></div>`;
-    const hot = /charg/i.test(charging || "") && !/complete|idle|disconnected|stopped/i.test(charging || "");
-    const paint = color || "#f4f4f4";
-    const glass = windowsOpen ? "none" : "#1a1a1c";
-    const glassStroke = windowsOpen ? paint : "none";
-    return `<svg viewBox="0 0 640 220" class="car-svg${hot ? " charging" : ""}${windowsOpen ? " windows" : ""}" aria-hidden="true">
-      <path d="M78 148c18-46 62-78 118-86 28-4 46-4 74 2 22 5 40 6 70 6 48 0 86 10 118 32 24 16 40 28 62 28 10 0 18-2 28-6l14 10c-16 10-34 14-52 12-22-2-36-12-54-24-28-18-58-28-100-30-34-2-52-2-78 4-42 8-78 34-98 72l-8 16H78z" fill="${paint}"/>
-      <path d="M168 78c22-8 48-10 78-8 18 1 34 2 52 6v28c-22-6-46-8-70-6-20 2-40 8-58 18l-2-38z" fill="${glass}" stroke="${glassStroke}" stroke-width="3"/>
-      <path d="M302 78c16 2 34 6 52 14 10 4 16 8 22 12v22c-14-8-32-14-52-16-12-1-22 0-30 2V78h8z" fill="${glass}" stroke="${glassStroke}" stroke-width="3"/>
-      ${windowsOpen ? `<path d="M186 96h78M318 96h48" stroke="${paint}" stroke-width="3" stroke-linecap="round"/>` : ""}
-      <circle cx="196" cy="156" r="28" fill="#0a0a0a" stroke="${paint}" stroke-width="8"/>
-      <circle cx="196" cy="156" r="10" fill="#3a3a3c"/>
-      <circle cx="430" cy="156" r="28" fill="#0a0a0a" stroke="${paint}" stroke-width="8"/>
-      <circle cx="430" cy="156" r="10" fill="#3a3a3c"/>
-      <circle class="port" cx="118" cy="132" r="7" fill="#3e6ae1"/>
-      <path class="bolt" d="M250 146h46l-10 16h28l-40 36 10-22h-26l12-30z" fill="#e82127"/>
-    </svg>`;
-  }
-
-  _swatches(car, index) {
-    const colors = ["#f4f4f4", "#171a20", "#e82127", "#3e6ae1", "#9a9a9e", "#c4a574"];
-    const current = this._color(car);
-    return `<div class="colors">${colors.map((c) => `<button class="swatch${c.toLowerCase() === String(current).toLowerCase() ? " on" : ""}" data-car="${index}" data-act="color" data-color="${c}" style="background:${c}"></button>`).join("")}<input class="picker" data-car="${index}" data-act="color" type="color" value="${/^#([0-9a-f]{6})$/i.test(current) ? current : "#f4f4f4"}"></div>`;
-  }
-
-  _ctrl(carIndex, key, label, act, on) {
-    return `<button class="ctrl${on ? " on" : ""}" data-car="${carIndex}" data-key="${key}" data-act="${act}"><span>${esc(label)}</span></button>`;
-  }
-
-  _carHtml(car, index, hass) {
-    const p = car.picked;
-    const soc = num(hass, p.battery);
-    const range = stateOf(hass, p.range);
-    const unit = p.range ? hass.states[p.range.id]?.attributes?.unit_of_measurement || "" : "";
-    const inside = stateOf(hass, p.inside);
-    const outside = stateOf(hass, p.outside);
-    const charging = stateOf(hass, p.charging) || "—";
-    const online = stateOf(hass, p.online);
-    const locked = stateOf(hass, p.lock) === "locked";
-    const climateOn = p.climate && stateOf(hass, p.climate) !== "off";
-    const sentryOn = stateOf(hass, p.sentry) === "on";
-    const width = soc == null ? 0 : Math.max(0, Math.min(100, soc));
-    const limit = num(hass, p.limit);
-    const amps = num(hass, p.amps);
-    const loc = p.tracker ? stateOf(hass, p.tracker) : "";
-
-    const controls = [
-      p.lock && this._ctrl(index, "lock", locked ? "Locked" : "Unlocked", "lock", locked),
-      p.climate && this._ctrl(index, "climate", climateOn ? "Climate on" : "Climate", "climate", climateOn),
-      p.sentry && this._ctrl(index, "sentry", "Sentry", "switch", sentryOn),
-      p.port && this._ctrl(index, "port", "Port", "cover", stateOf(hass, p.port) === "open"),
-      p.frunk && this._ctrl(index, "frunk", "Frunk", "cover", false),
-      p.trunk && this._ctrl(index, "trunk", "Trunk", "cover", false),
-      p.windows && this._ctrl(index, "windows", "Vent", "cover", false),
-      p.wake && this._ctrl(index, "wake", "Wake", "press", false),
-      p.flash && this._ctrl(index, "flash", "Flash", "press", false),
-      p.horn && this._ctrl(index, "horn", "Honk", "press", false),
-      p.start && this._ctrl(index, "start", "Start", "press", false),
-      p.refresh && this._ctrl(index, "refresh", "Refresh", "press", false),
-    ].filter(Boolean).join("");
-
-    const sliders = [
-      p.limit && `<label>Charge limit <b>${limit ?? "—"}%</b><input data-car="${index}" data-key="limit" type="range" min="50" max="100" value="${limit ?? 80}"></label>`,
-      p.amps && `<label>Amps <b>${amps ?? "—"}</b><input data-car="${index}" data-key="amps" type="range" min="1" max="48" value="${amps ?? 5}"></label>`,
-    ].filter(Boolean).join("");
-
-    return `
-      <article class="car">
-        <header><b>${esc(car.name)}</b><span>${esc(charging)}</span></header>
-        <div class="visual">${this._carSvg(car, charging, stateOf(hass, p.windows) === "open", this._color(car))}</div>
-        ${this._swatches(car, index)}
-        <div class="soc">${soc == null ? "—" : soc}<small>%</small></div>
-        <div class="bar"><i style="width:${width}%"></i></div>
-        <div class="meta">
-          <span><b>${esc(range || "—")}</b> ${esc(unit)}</span>
-          <span><b>${esc(inside || "—")}</b> cabin</span>
-          <span><b>${esc(outside || "—")}</b> outside</span>
-          ${online ? `<span><b>${esc(online)}</b></span>` : ""}
-          ${loc ? `<span><b>${esc(loc)}</b></span>` : ""}
-        </div>
-        <div class="controls">${controls}</div>
-        ${sliders ? `<div class="sliders">${sliders}</div>` : ""}
-        <div class="rows">
-          ${p.power ? `<div><span>Power</span><b>${esc(stateOf(hass, p.power))} ${esc(hass.states[p.power.id]?.attributes?.unit_of_measurement || "")}</b></div>` : ""}
-          ${p.added ? `<div><span>Added</span><b>${esc(stateOf(hass, p.added))}</b></div>` : ""}
-          ${p.timeLeft ? `<div><span>Time left</span><b>${esc(stateOf(hass, p.timeLeft))}</b></div>` : ""}
-          ${p.chargeSwitch ? `<div><span>Charge</span><b>${esc(stateOf(hass, p.chargeSwitch))}</b></div>` : ""}
-        </div>
-      </article>`;
-  }
-
-  _render() {
-    if (!this.shadowRoot || !this._hass) return;
-    const hass = this._hass;
-    const all = listTesla(hass);
-    const byDevice = new Map();
-    for (const ent of all) {
-      const key = ent.device_id || ent.id;
-      if (!byDevice.has(key)) byDevice.set(key, []);
-      byDevice.get(key).push(ent);
-    }
-    this._cars = [];
-    const sites = [];
-    for (const [deviceId, entities] of byDevice) {
-      if (isEnergy(entities)) sites.push({ name: deviceName(hass, deviceId), entities });
-      else this._cars.push({ name: deviceName(hass, deviceId), picked: pick(entities) });
-    }
-
-    const body = this._cars.length
-      ? this._cars.map((car, i) => this._carHtml(car, i, hass)).join("")
-      : `<article class="car"><p class="empty">No Tesla cars yet. Add Tesla Custom or Tesla Fleet, then reload.</p></article>`;
-    const energy = sites.map((site) => {
-      const rows = site.entities.filter((e) => e.id.startsWith("sensor.")).slice(0, 8)
-        .map((e) => `<div><span>${esc(e.state.attributes.friendly_name || e.id)}</span><b>${esc(e.state.state)}</b></div>`).join("");
-      return `<article class="car"><header><b>${esc(site.name)}</b><span>Energy</span></header><div class="rows">${rows}</div></article>`;
-    }).join("");
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        .wrap { background: #000; color: #fff; border-radius: 18px; padding: 8px; font-family: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif; letter-spacing: -0.02em; }
-        .car { background: #171717; border: 1px solid #242424; border-radius: 16px; padding: 16px; margin: 8px; }
-        header { display: flex; justify-content: space-between; align-items: baseline; }
-        header b { font-size: 18px; font-weight: 580; }
-        header span, .meta { color: #9a9a9e; font-size: 13px; }
-        .visual { margin: 6px 0 2px; }
-        .car-svg { width: 100%; height: 92px; display: block; }
-        .car-svg .bolt, .car-svg .port { opacity: 0; }
-        .car-svg.charging .bolt, .car-svg.charging .port { opacity: 1; }
-        .car-svg.charging .bolt { animation: pulse 1.1s ease-in-out infinite; }
-        @keyframes pulse { 50% { opacity: .35; } }
-        .colors { display: flex; gap: 8px; align-items: center; margin: 2px 0 8px; }
-        .swatch { width: 18px; height: 18px; border-radius: 99px; border: 1px solid #3a3a3c; padding: 0; cursor: pointer; }
-        .swatch.on { outline: 2px solid #3e6ae1; outline-offset: 2px; }
-        .picker { width: 22px; height: 22px; border: 0; background: none; padding: 0; }
-        .soc { font-size: 64px; line-height: .9; font-weight: 560; margin: 4px 0 6px; }
-        .soc small { font-size: 22px; color: #9a9a9e; }
-        .bar { height: 6px; background: #2c2c2e; border-radius: 99px; overflow: hidden; }
-        .bar i { display: block; height: 100%; background: linear-gradient(90deg, #e82127, #fff 42%); }
-        .meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 14px; }
-        .meta b { color: #fff; font-weight: 560; }
-        .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-        .ctrl { background: #111; color: #fff; border: 1px solid #2a2a2a; border-radius: 14px; padding: 14px 8px; font: inherit; cursor: pointer; }
-        .ctrl.on { border-color: #3e6ae1; }
-        .sliders { margin-top: 14px; display: grid; gap: 10px; }
-        label { display: grid; grid-template-columns: 1fr auto; gap: 8px; color: #9a9a9e; font-size: 13px; }
-        label b { color: #fff; }
-        input[type=range] { grid-column: 1 / -1; accent-color: #e82127; width: 100%; }
-        .rows { margin-top: 12px; }
-        .rows div { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid #242424; font-size: 14px; }
-        .rows span { color: #9a9a9e; }
-        .empty { color: #9a9a9e; line-height: 1.4; }
-      .wrap{background:#000!important;color:#fff;border-radius:22px!important;padding:4px!important;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif!important;letter-spacing:-.02em}.car{background:#181818!important;border:1px solid #292929!important;border-radius:20px!important;padding:0!important;margin:8px!important;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,.28)}.car header{padding:18px 18px 0!important;font-size:19px!important}.car header span{color:#8f8f93!important;font-size:12px!important}.visual{margin:0!important;padding:14px 18px 0!important;height:190px;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#252525 0,#1a1a1a 48%,#181818 75%)!important}.car-svg{height:175px!important;filter:drop-shadow(0 18px 15px rgba(0,0,0,.45))}.colors{padding:0 18px 12px!important;gap:10px!important}.soc{font-size:64px!important;font-weight:600!important;letter-spacing:-.055em!important;margin:0 18px 8px!important}.bar{margin:0 18px!important;height:5px!important;background:#333!important}.bar i{background:#fff!important}.meta{padding:10px 18px 14px!important;margin:0!important;gap:18px!important}.controls{padding:14px 12px!important;grid-template-columns:repeat(4,1fr)!important;gap:7px!important;border-top:1px solid #292929}.ctrl{min-height:62px;border-radius:13px;background:#232323;border:0!important;font-size:10px!important}.ctrl.on{background:#252d3a!important;border:0!important}.sliders{padding:15px 18px 12px!important;margin:0!important;border-top:1px solid #292929}.rows{padding:4px 18px 12px!important;margin:0!important;border-top:1px solid #292929}.rows div{border-bottom:1px solid #242424;border-top:0!important;padding:9px 0!important}</style>
-      <div class="wrap">${body}${energy}</div>`;
-    this.shadowRoot.querySelector(".wrap").onclick = (ev) => this._onClick(ev);
-    this.shadowRoot.querySelector(".wrap").onchange = (ev) => this._onInput(ev);
+  _render(){
+    if(!this.shadowRoot||!this._hass)return;
+    const h=this._hass,all=listTesla(h),by=new Map();
+    for(const e of all){const k=e.device_id||e.id;if(!by.has(k))by.set(k,[]);by.get(k).push(e)}
+    this._cars=[...by].map(([id,es])=>({id,device_id:id,name:deviceName(h,id),model:vehicleModel(h,id,es),picked:pick(es)}));
+    const body=this._cars.length?this._cars.map((c,i)=>this._carHtml(c,i,h)).join(""):'<article class="car empty">No Tesla vehicles detected. Add Tesla Custom or Tesla Fleet and reload.</article>';
+    this.shadowRoot.innerHTML='<style>:host{display:block}.wrap{background:#000;color:#fff;border-radius:24px;padding:4px;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;letter-spacing:-.02em}.car{background:#181818;border:1px solid #292929;border-radius:22px;margin:8px;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,.3)}header{display:flex;justify-content:space-between;align-items:center;padding:18px 18px 0}header b{font-size:20px;font-weight:600}header small{display:block;color:#888;font-size:11px;margin-top:2px}.state{color:#aaa;font-size:12px}.state.charge{color:#3e6ae1}.visual{height:190px;padding:8px 18px 0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#292929,#181818 72%)}.car-svg{width:100%;height:180px;filter:drop-shadow(0 18px 15px rgba(0,0,0,.5))}.bolt{opacity:0}.charging .bolt{opacity:1;animation:pulse 1.1s infinite}.charging .charge{animation:pulse 1.1s infinite}@keyframes pulse{50%{opacity:.3}}.colors{display:flex;gap:9px;padding:0 18px 12px}.swatch{width:17px;height:17px;border-radius:50%;border:1px solid #444;padding:0}.swatch.on{outline:2px solid #3e6ae1;outline-offset:2px}.picker{width:20px;height:20px;border:0;background:none}.battery{display:flex;align-items:end;justify-content:space-between;margin:0 18px 7px}.battery strong{font-size:64px;line-height:.85;letter-spacing:-.06em}.battery strong small{font-size:20px;color:#888}.battery span{font-size:13px;color:#aaa}.bar{height:5px;background:#333;border-radius:99px;overflow:hidden;margin:0 18px}.bar i{display:block;height:100%;background:#fff}.meta{display:flex;gap:16px;flex-wrap:wrap;padding:11px 18px 15px;color:#999;font-size:12px}.meta b{color:#fff}section,.climate{border-top:1px solid #292929;padding:14px 18px}.title{display:flex;justify-content:space-between;margin-bottom:9px;font-size:13px}.title small{color:#777;font-size:10px}.address{font-size:14px}.states div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #242424;font-size:12px;color:#999}.states b{color:#ddd}.states b.alert{color:#e82127}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.ctrl{min-height:60px;background:#232323;color:#fff;border:0;border-radius:13px;font-size:10px}.ctrl.on{background:#252d3a}.ctrl span{display:block;font-size:17px;margin-bottom:6px}.climate{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;color:#888;font-size:10px}.climate b,.chargegrid b{display:block;color:#fff;font-size:12px;margin-top:4px}.chargegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.chargegrid span{background:#232323;border-radius:11px;padding:10px;color:#888;font-size:10px}label{display:grid;grid-template-columns:1fr auto;gap:5px;color:#888;font-size:11px;margin-top:12px}label b{color:#fff}label input{grid-column:1/-1;width:100%;accent-color:#e82127}.route{width:100%;height:170px;background:#101010;border-radius:14px}.map-empty{background:#101010;color:#666;border-radius:14px;padding:22px;text-align:center;font-size:11px}.empty{padding:20px;color:#888}</style><div class="wrap">'+body+'</div>';
+    const w=this.shadowRoot.querySelector(".wrap");w.onclick=e=>this._onClick(e);w.onchange=e=>this._onChange(e);
   }
 }
-
 customElements.define("tesla-share-card", TeslaShareCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
