@@ -206,27 +206,54 @@ class TeslaShareCard extends HTMLElement {
     const d=ent.id.split(".")[0];if(x.type==="range")this._service(ent,d==="number"?"set_value":"set_value",{value:+x.value});
   }
   _stockCar(car,charging,open){
-    const p=this._color(car),m=car.model,cyber=m==="Cybertruck",suv=m==="Model X"||m==="Model Y";
-    const shape=cyber?"M42 150L105 78L395 63L500 78L574 121L596 151L566 163H72Z":
-      m==="Model S"?"M42 151C74 101 139 76 246 71L407 77C495 80 548 108 598 146L567 164H72Z":
-      m==="Model X"?"M40 151C67 91 137 65 242 67L421 74C500 78 551 105 600 146L567 164H70Z":
-      m==="Model Y"?"M40 151C68 87 138 67 245 68L421 74C500 78 551 106 600 146L567 164H70Z":
-      "M42 151C72 101 138 76 245 71L412 76C495 80 548 108 598 146L567 164H72Z";
-    const glass=cyber?"M119 82L385 69L474 82L520 111H113Z":suv?"M142 82C211 66 337 67 423 78L500 112H128Z":"M152 84C220 68 332 69 410 79L493 113H140Z";
-    const seam=cyber?"M330 82L352 148M420 88L435 150":"M287 80V148M382 82V149";
-    return '<svg viewBox="0 0 640 220" class="car-svg '+(charging?"charging ":"")+(open?"open ":"")+(cyber?"cyber":"")+'">'+
-      '<ellipse cx="320" cy="170" rx="260" ry="15" fill="#000" opacity=".45"/>'+
-      '<path class="body" d="'+shape+'" fill="'+p+'" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>'+
-      '<path class="glass" d="'+glass+'" fill="#111820" stroke="#000" stroke-width="3"/>'+
-      '<path d="'+seam+'" stroke="#111" stroke-width="3" opacity=".55"/>'+
-      '<path d="M115 124L145 116M500 116L530 124" stroke="'+p+'" stroke-width="8" stroke-linecap="round"/>'+
-      '<circle cx="172" cy="158" r="31" fill="#070707" stroke="#333" stroke-width="5"/><circle cx="172" cy="158" r="13" fill="#777"/>'+
-      '<circle cx="466" cy="158" r="31" fill="#070707" stroke="#333" stroke-width="5"/><circle cx="466" cy="158" r="13" fill="#777"/>'+
-      '<path d="M92 132L116 126" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".85"/>'+
-      '<path d="M529 126L552 132" stroke="#e82127" stroke-width="5" stroke-linecap="round"/>'+
-      '<circle class="charge" cx="111" cy="133" r="7" fill="#3e6ae1"/>'+
-      '<path class="bolt" d="M250 136h42l-10 17h28l-40 39 10-23h-27z" fill="#fff"/>'+
-      (open?'<path class="door-open" d="M190 112V67M360 112V72" stroke="'+p+'" stroke-width="6" stroke-linecap="round"/>':"")+
+    const paint=this._color(car),m=car.model||"Tesla";
+    const cyber=m==="Cybertruck",x=m==="Model X",y=m==="Model Y",s=m==="Model S",road=m==="Roadster";
+    const uid=(car.device_id||car.id||"tesla").replace(/[^a-z0-9]/gi,"");
+    const bodyId="body-"+uid,glassId="glass-"+uid;
+    const body=cyber
+      ?"M38 151L104 82L398 66L506 79L579 122L604 150L569 164H69Z"
+      :x
+      ?"M38 151C58 104 111 72 198 67L405 71C492 74 550 101 605 145L570 164H68Z"
+      :y
+      ?"M39 151C61 99 120 70 211 67L414 73C493 76 550 104 604 146L569 164H68Z"
+      :road
+      ?"M41 151C73 108 133 82 231 77L423 83C500 87 548 110 602 146L568 164H70Z"
+      :s
+      ?"M40 151C72 104 138 78 246 72L416 78C499 81 551 108 603 146L568 164H70Z"
+      :"M41 151C72 104 139 78 246 72L414 78C498 81 551 108 603 146L568 164H70Z";
+    const glass=cyber
+      ?"M106 84L391 69L480 82L531 111H104Z"
+      :(x||y)
+      ?"M124 84C195 65 335 66 425 76L511 112H112Z"
+      :"M141 84C216 65 337 68 423 78L505 112H132Z";
+    const lower=cyber
+      ?"M72 146L568 146L570 164H69Z"
+      :"M70 145C180 153 430 153 570 145L568 164H70Z";
+    const wheel=(cx)=>'<circle cx="'+cx+'" cy="158" r="31" fill="#070707" stroke="#343434" stroke-width="5"/><circle cx="'+cx+'" cy="158" r="22" fill="url(#wheel-'+uid+')"/><circle cx="'+cx+'" cy="158" r="7" fill="#8b8b8b"/><path d="M'+(cx-15)+' 158H'+(cx+15)+'M'+cx+' 143V173" stroke="#555" stroke-width="2" opacity=".8"/>';
+    const doors=cyber
+      ?'<path d="M276 87L276 147M398 91L405 148" class="seam"/>'
+      :'<path d="M286 80L286 147M383 82L383 148" class="seam"/>';
+    return '<svg viewBox="0 0 640 220" class="car-svg '+(charging?"charging ":"")+(open?"open ":"")+(cyber?"cyber":"")+'" role="img" aria-label="'+esc(m)+'">'+
+      '<defs>'+
+      '<linearGradient id="'+bodyId+'" x1="0" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="'+paint+'" stop-opacity=".98"/><stop offset=".48" stop-color="'+paint+'"/><stop offset="1" stop-color="#050505" stop-opacity=".78"/></linearGradient>'+
+      '<linearGradient id="'+glassId+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#24303d"/><stop offset=".45" stop-color="#0c1118"/><stop offset="1" stop-color="#05070a"/></linearGradient>'+
+      '<radialGradient id="wheel-'+uid+'"><stop offset="0" stop-color="#777"/><stop offset=".35" stop-color="#252525"/><stop offset="1" stop-color="#080808"/></radialGradient>'+
+      '</defs>'+
+      '<ellipse cx="320" cy="174" rx="268" ry="13" fill="#000" opacity=".62"/>'+
+      '<path class="body" d="'+body+'" fill="url(#'+bodyId+')" stroke="#fff" stroke-opacity=".18" stroke-width="2"/>'+
+      '<path d="'+lower+'" fill="#080808" opacity=".48"/>'+
+      '<path class="glass" d="'+glass+'" fill="url(#'+glassId+')" stroke="#020304" stroke-width="4"/>'+
+      '<path d="M'+(cyber?120:151)+' 88L'+(cyber?475:468)+' 108" stroke="#fff" stroke-opacity=".13" stroke-width="2"/>'+
+      '<path d="M'+(cyber?108:135)+' 117C250 105 395 107 512 117" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>'+
+      doors+
+      '<path d="M110 127L143 118M501 118L533 128" stroke="'+paint+'" stroke-width="7" stroke-linecap="round" opacity=".9"/>'+
+      '<path d="M100 135L125 128" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".9"/>'+
+      '<path d="M529 128L552 134" stroke="#e82127" stroke-width="5" stroke-linecap="round"/>'+
+      wheel(171)+wheel(469)+
+      '<circle class="charge" cx="112" cy="134" r="7" fill="#3e6ae1"/>'+
+      '<circle cx="112" cy="134" r="12" fill="none" stroke="#fff" stroke-opacity=".14"/>'+
+      '<path class="bolt" d="M251 128h31l-9 17h22l-38 42 9-25h-25z" fill="#fff"/>'+
+      (open?'<path class="door-open" d="M190 112L173 64M360 112L374 69" stroke="'+paint+'" stroke-width="5" stroke-linecap="round"/>':"")+
       '</svg>';
   }
   _swatches(car,i){
