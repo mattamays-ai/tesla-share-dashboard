@@ -1,5 +1,7 @@
 # Tesla Share
 
+> Development project. Official HACS catalog publication is intentionally deferred while discovery, command reliability, and dashboard behavior are still being validated.
+
 A Tesla-inspired Home Assistant vehicle command center for **Tesla Custom** and **Tesla Fleet**.
 
 Tesla Share is designed around one idea: put the car first. It combines live vehicle state, practical controls, model-aware vehicle artwork, charging and climate controls, and Recorder-backed location history in a single Home Assistant resource that can run as a normal card or as a Tesla-style multi-view dashboard.
@@ -32,25 +34,36 @@ Unsupported capabilities are omitted rather than replaced with fake controls.
 
 ## Installation
 
-### HACS
+### HACS custom repository
 
-**[Install Tesla Share from this GitHub repository](https://github.com/mattamays-ai/tesla-share-dashboard)**
+Tesla Share is still under development and is **not being presented as an official HACS catalog listing yet**. For testing, add the GitHub repository as a HACS custom repository with category **Dashboard**.
 
-1. Open the repository in GitHub.
-2. In Home Assistant, open **HACS → Dashboard**.
-3. Search for **Tesla Share** and select **Tesla Share**.
-4. Select **Download**.
-5. Refresh the Home Assistant frontend if prompted.
-6. Add the card to a dashboard:
+1. Open **HACS → Dashboard** in Home Assistant.
+2. Open the HACS menu and choose **Custom repositories**.
+3. Add:
+
+```text
+https://github.com/mattamays-ai/tesla-share-dashboard
+```
+
+4. Select **Dashboard** as the repository category.
+5. Install **Tesla Share**.
+6. Refresh the Home Assistant frontend if prompted.
+
+For normal card mode:
 
 ```yaml
 type: custom:tesla-share-card
 ```
 
-**HACS direct repository:**  
-https://github.com/mattamays-ai/tesla-share-dashboard
+For the Tesla-style dashboard mode:
 
-If Tesla Share is not yet visible in your HACS catalog, add the GitHub repository as a **custom repository** with category **Dashboard**, then install it from HACS.
+```yaml
+type: custom:tesla-share-card
+mode: dashboard
+```
+
+The repository can be tested through HACS without treating it as a finished official catalog release.
 
 ### Manual Home Assistant install
 
