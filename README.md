@@ -12,7 +12,7 @@ Each detected Tesla gets its own live vehicle screen with:
 
 - Model-aware Tesla vehicle artwork for Model 3, Model Y, Model S, Model X, and Cybertruck
 - Automatic vehicle and entity discovery
-- Per-vehicle paint selection
+- Per-vehicle paint selection from the vehicle settings gear, including the custom color picker
 - Battery percentage and range
 - Charge limit, charging power, current, energy added, and time remaining when exposed
 - Charging state and charging animation
@@ -316,23 +316,7 @@ The implementation intentionally avoids inventing vehicle capabilities or render
 
 ## Development
 
-The repository includes a local `preview.html` fixture for browser testing.
-
-Start a local server:
-
-```bash
-python3 -m http.server 8631
-```
-
-Then open:
-
-```
-http://localhost:8631/preview.html?v=<incrementing-number>
-```
-
-The fixture mocks Home Assistant state, registries, Recorder history, and service calls.
-
-Keep the registry mock and state mock synchronized because discovery is registry-driven.
+The production card is a single-file Home Assistant resource. Browser testing should be performed against the current `tesla-share-card.js` with a Home Assistant fixture or live Home Assistant instance.
 
 ### Basic release checks
 
