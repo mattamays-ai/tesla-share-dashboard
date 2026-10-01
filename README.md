@@ -77,4 +77,6 @@ Tesla's product UI is used as the design reference, not copied pixel-for-pixel. 
 
 ## Development
 
-The v3 vehicle command center is developed on the `v3-vehicle-command-center` branch before review and merge into `main`.
+Tesla Share uses Home Assistant's WebSocket entity and device registries for automatic discovery. The card does not depend on undocumented `hass.entities` or `hass.devices` properties. Recorder history requests are cached per vehicle set and history window so normal Home Assistant state updates do not repeatedly query Recorder.
+
+The current vehicle command center is on `main`.
