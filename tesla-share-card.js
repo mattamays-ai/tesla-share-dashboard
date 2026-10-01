@@ -87,9 +87,11 @@ function pick(entities) {
     lock: best([dom("lock"),rx(/door.*lock|vehicle.*lock|lock/),suffix(["_lock"])]),
     climate: best([dom("climate"),rx(/climate|hvac/)]),
     sentry: best([rx(/sentry/),suffix(["_sentry_mode"])]),
-    port: best([rx(/charge.*port|charger.*door/),suffix(["_charger_door","_charge_port_door"])]),
-    frunk: best([rx(/frunk/),suffix(["_frunk"])]),
-    trunk: best([rx(/trunk|boot/),suffix(["_trunk","_boot"])]),
+    port: best([dom("cover"),dom("lock"),dom("switch"),rx(/charge.*port|charger.*door/),suffix(["_charger_door","_charge_port_door"])]),
+    portOpen: best([rx(/charge.*port.*open|charger.*door.*open/),suffix(["_charge_port_open","_charger_door_open"])]),
+    portClose: best([rx(/charge.*port.*close|charger.*door.*close/),suffix(["_charge_port_close","_charger_door_close"])]),
+    frunk: best([dom("cover"),rx(/frunk/),suffix(["_frunk"])]),
+    trunk: best([dom("cover"),rx(/trunk|boot/),suffix(["_trunk","_boot"])]),
     windows: best([rx(/windows|window.*state/),suffix(["_windows","_vent_windows"])]),
     doorDriver: best([rx(/driver.*door|left.*front.*door|front.*left.*door/)]),
     doorPassenger: best([rx(/passenger.*door|right.*front.*door|front.*right.*door/)]),
@@ -180,17 +182,38 @@ class TeslaShareCard extends HTMLElement {
     if(!ent||!this._hass)return false;
     const d=ent.id.split(".")[0];
     this._busy=this._busy||new Set();this._busy.add(ent.id);this._render();
-    try{await this._hass.callService(d,service,{entity_id:ent.id,...data});this._notice="Command sent";return true}
-    catch(e){this._notice="Command failed";return false}
-    finally{this._busy.delete(ent.id);this._render();clearTimeout(this._noticeTimer);this._noticeTimer=setTimeout(()=>{this._notice="";this._render()},3500)}
+    try{
+      await this._hass.callService(d,service,{entity_id:ent.id,...data});
+      this._notice="Command sent";
+      return true;
+    }catch(e){
+      const msg=String(e?.message||e?.error?.message||e||"Unknown Home Assistant error").replace(/\s+/g," ").slice(0,180);
+      this._notice="Command failed: "+msg;
+      return false;
+    }finally{
+      this._busy.delete(ent.id);this._render();clearTimeout(this._noticeTimer);
+      this._noticeTimer=setTimeout(()=>{this._notice="";this._render()},5000);
+    }
   }
-  async _action(ent,kind){
+  async _action(ent,kind,key){
     if(!ent)return;
     const d=ent.id.split(".")[0],s=stateOf(this._hass,ent);
+    if(kind==="press"||d==="button"){
+      await this._service(ent,"press");
+      return;
+    }
     if(kind==="toggle"){
-      const service=d==="lock"?(s==="locked"?"unlock":"lock"):d==="switch"?(s==="on"?"turn_off":"turn_on"):d==="climate"?(s==="off"?"turn_on":"turn_off"):d==="cover"?(openState(s)?"close_cover":"open_cover"):null;
+      let service=null;
+      if(key==="lock"&&d==="lock")service=s==="locked"?"unlock":"lock";
+      else if(key==="climate"&&d==="climate")service=s==="off"?"turn_on":"turn_off";
+      else if(key==="sentry"&&d==="switch")service=s==="on"?"turn_off":"turn_on";
+      else if(key==="port"&&d==="switch")service=s==="on"?"turn_off":"turn_on";
+      else if((key==="port"||key==="frunk"||key==="trunk"||key==="windows")&&d==="cover")service=openState(s)?"close_cover":"open_cover";
+      else if(d==="cover")service=openState(s)?"close_cover":"open_cover";
       if(service)await this._service(ent,service);
-    }else if(kind==="press")await this._service(ent,"press");
+      else this._notice="No compatible command for "+key;
+      if(!service)this._render();
+    }
   }
   async _climateAction(car,action){
     const ent=car.picked?.climate;if(!ent)return;
@@ -214,17 +237,22 @@ class TeslaShareCard extends HTMLElement {
   _onClick(e){
     const b=e.target.closest("[data-act]");if(!b)return;
     if(b.dataset.act==="confirm"){
-      if(this._confirm&&b.dataset.choice==="yes"){const c=this._confirm;this._confirm=null;this._render();this._action(c.ent,c.act)}
+      if(this._confirm&&b.dataset.choice==="yes"){const c=this._confirm;this._confirm=null;this._render();this._action(c.ent,c.act,c.key)}
       else{this._confirm=null;this._render()}
       return;
     }
     const car=this._cars?.[+b.dataset.car];if(!car)return;
     if(b.dataset.act==="color"){try{localStorage.setItem("tesla-share-color:"+(car.device_id||car.id||car.name),b.dataset.color||b.value)}catch{}this._render();return}
-    if(b.dataset.act==="climate"){this._climateAction(car,b.dataset.climate);return}
-    const key=b.dataset.key,ent=car.picked?.[key];if(!ent)return;
+    const key=b.dataset.key;
+    if(key==="port"&&b.dataset.act==="toggle"){
+      const open=car.picked?.portOpen,close=car.picked?.portClose,main=car.picked?.port;
+      const target=stateOf(this._hass,main)==="open"?close:open;
+      if(target){this._action(target,"press","port");return}
+    }
+    const ent=car.picked?.[key];if(!ent)return;
     const state=stateOf(this._hass,ent),risky=key==="horn"||key==="flash"||key==="start"||key==="frunk"||key==="trunk"||(key==="lock"&&state!=="locked");
     if(risky){this._confirm={car:car.name,key,ent,act:b.dataset.act};this._render();return}
-    this._action(ent,b.dataset.act);
+    this._action(ent,b.dataset.act,key);
   }
   _onChange(e){
     const x=e.target,car=this._cars?.[+x.dataset.car];if(!car)return;
