@@ -1,136 +1,297 @@
 # Tesla Share
 
-A Tesla-inspired Home Assistant vehicle command center for Tesla Custom and Tesla Fleet.
+A Tesla-inspired Home Assistant vehicle command center for **Tesla Custom** and **Tesla Fleet**.
 
-## Card
+Tesla Share is designed around one idea: put the car first. It combines live vehicle state, practical controls, model-aware vehicle artwork, charging and climate controls, and Recorder-backed location history in a single Home Assistant card.
+
+## What it does
+
+Each detected Tesla gets its own live vehicle screen with:
+
+- Model-aware Tesla vehicle artwork for Model 3, Model Y, Model S, Model X, and Cybertruck
+- Automatic vehicle and entity discovery
+- Per-vehicle paint selection
+- Battery percentage and range
+- Charge limit, charging power, current, energy added, and time remaining when exposed
+- Charging state and charging animation
+- Lock and unlock state
+- Climate state, HVAC mode, fan mode, cabin temperature, and outside temperature
+- Sentry Mode
+- Charge-port state
+- Frunk and trunk state
+- Window and individual door/window states when the integration exposes them
+- Wake and refresh actions when available
+- Flash, horn, and remote-start actions when available
+- Frunk and trunk controls when available
+- Charge-limit and charging-current controls when writable entities exist
+- Live GPS coordinates and integration-provided location/address attributes
+- Recorder-backed route history
+- Estimated trip detection and trip summaries
+
+Unsupported capabilities are omitted rather than replaced with fake controls.
+
+## Installation
+
+### HACS
+
+Install **Tesla Share** through HACS as a dashboard plugin.
+
+Then add the card to a Home Assistant dashboard:
 
 ```yaml
 type: custom:tesla-share-card
 ```
 
-No image configuration is required. Tesla Share automatically uses built-in vehicle artwork based on the detected Tesla model.
+### Requirements
 
-Optional:
+- Home Assistant 2024.8.0 or newer
+- A supported Tesla integration exposing the vehicle entities Tesla Share can discover
+- Home Assistant Recorder for route and trip history
+
+No build step or package installation is required.
+
+## Configuration
+
+The minimum configuration is:
+
+```yaml
+type: custom:tesla-share-card
+```
+
+Optional configuration:
 
 ```yaml
 type: custom:tesla-share-card
 history_days: 7
+history_ttl_ms: 300000
 colors:
   My Model Y: "#171A20"
 ```
 
-## v3 vehicle command center
+### Configuration options
 
-Each Tesla gets a live vehicle screen with:
+| Option | Default | Range | Purpose |
+| --- | ---: | ---: | --- |
+| `history_days` | 7 | 1-30 | Recorder history window |
+| `history_ttl_ms` | 300000 | 60000-900000 | Recorder cache lifetime |
+| `colors` | {} | Any | Per-vehicle paint colors |
+| `vehicle_images` | {} | Any | Optional model-specific artwork URLs |
 
-- Built-in Model 3, Model Y, Model S, Model X, and Cybertruck artwork
-- Automatic vehicle/model discovery
-- Battery percentage, range, charge limit, charging power, amps, energy added, and time remaining
-- Charging state and visual charging animation
-- Lock state
-- Climate state and cabin/outside temperature
-- Sentry Mode
-- Charge-port state
-- Frunk and trunk state
-- Windows state
-- Individual door/window states when the Tesla integration exposes them
-- Wake, refresh, flash, horn, and remote-start actions when available
-- Charge-limit and charging-amp controls when available
-- Live GPS coordinates and the integration's location/address attributes
-- Recorder-backed location history with a route view
+History is read from Home Assistant Recorder. It is not stored in browser localStorage.
 
-### Location history
+## Automatic discovery
 
-The card queries Home Assistant Recorder history for the vehicle's `device_tracker` entity. Set:
+Tesla Share discovers entities through Home Assistant's WebSocket entity and device registries.
+
+Supported platforms include:
+
+- `tesla_custom`
+- `tesla_fleet`
+
+Entities are grouped by Home Assistant device and scored using domain, device class, name, capability, and state information. Unknown or unavailable candidates are deprioritized, and charge-port entities are prevented from being mistaken for the vehicle's primary lock.
+
+This allows a single card to handle multiple Teslas without manually entering every entity ID.
+
+## Vehicle artwork
+
+Tesla Share uses model-aware vehicle artwork and falls back gracefully when remote artwork is unavailable.
+
+- Model 3, Model Y, Model S, and Model X use official Tesla CDN artwork when available.
+- Cybertruck and fallback models use built-in transparent SVG artwork.
+- Paint selection uses lightweight CSS image treatment rather than a cross-origin SVG mask dependency.
+- Remote artwork failures fall back to the built-in vehicle illustration.
+- Artwork preserves a transparent vehicle-first presentation rather than placing a rectangular image over the card background.
+
+Paint rendering is a visual approximation. It is not intended to reproduce an automotive paint formula exactly.
+
+## Controls and command feedback
+
+Tesla Share only exposes controls backed by discovered Home Assistant entities.
+
+High-impact actions use an in-card confirmation flow:
+
+- Unlock
+- Honk
+- Flash
+- Remote start
+- Open frunk
+- Open trunk
+
+Locking and closing actions do not require confirmation.
+
+After a service call:
+
+- **Vehicle state updated** means the selected state entity changed during the short observation window.
+- **Command accepted · vehicle state pending** means Home Assistant accepted the service call but the selected state did not change during that observation window.
+- **Command failed: ...** means Home Assistant rejected the service call and the card surfaces the bounded error.
+
+The acknowledgement is deliberately not presented as proof that Tesla has completed the physical action.
+
+## Charging and climate
+
+When the integration exposes the required entities, Tesla Share provides:
+
+- Charging status
+- Charge limit
+- Charging current
+- HVAC mode
+- Fan mode
+- Cabin temperature
+- Outside temperature
+- Temperature selection and apply
+- Charging power and energy information
+
+Controls are capability-driven, so unavailable functions are not rendered as dead buttons.
+
+## Location history and trips
+
+Tesla Share can query Recorder history for the vehicle's `device_tracker`.
+
+### Route history
+
+The card can display:
+
+- Current vehicle coordinates
+- Integration-provided address/location attributes
+- Full retained Recorder GPS route
+- Route availability information when GPS data is missing
+
+Set:
 
 ```yaml
 history_days: 30
 ```
 
-to inspect up to 30 days of retained history.
+to inspect up to 30 days of retained Recorder history.
 
-The history is not stored in browser localStorage. It comes from Home Assistant, so it can survive browser changes and card reloads. Actual history length depends on Home Assistant Recorder retention and whether the Tesla integration records latitude/longitude attributes.
+Actual history depends on Home Assistant Recorder retention and whether the Tesla integration records latitude/longitude attributes.
 
-If GPS coordinates are not exposed by the selected Tesla integration, the live vehicle state still works and the history panel explains why route data is unavailable.
+### Estimated trips
 
-## Automatic discovery
+Recorder GPS points are converted into conservative estimated trips.
 
-Tesla Share discovers entities from `tesla_custom` and `tesla_fleet`, groups them by Home Assistant device, and only renders controls supported by the entities it finds.
+- Recorder gaps greater than 30 minutes create a new segment.
+- Distance is estimated from consecutive GPS points using haversine distance.
+- Legs below 0.05 km are ignored.
+- Trips below 0.35 km are ignored.
+- Up to 20 trips may be retained internally.
+- The UI displays the latest 5 trips.
+- Trip distance is an estimate from Recorder GPS points, not Tesla's odometer or official Tesla trip data.
 
-That means one card can show multiple Teslas without manually entering entity IDs.
+The card labels these as **estimated trips** to keep that distinction explicit.
 
-## HACS
+## State and units
 
-Install the repository through HACS as a dashboard plugin, then add:
+Tesla Share follows the source entity wherever possible.
 
-```yaml
-type: custom:tesla-share-card
-```
+- Active charging uses green semantic treatment.
+- Battery at or below 20% uses amber treatment.
+- Heating uses red semantic treatment.
+- Cooling uses blue semantic treatment.
+- Open vehicle panels are shown as state information rather than invented faults.
+- TPMS values use the source entity's native unit.
+- TPMS warning color comes from the corresponding warning entity when available.
+- Unknown and unavailable states remain visibly unavailable.
+- Temperature units prefer the source entity/Home Assistant unit system.
 
-## Requirements
+No universal PSI threshold or guessed fault state is applied.
 
-Home Assistant 2024.8.0 or newer, matching the HACS manifest.
+## Accessibility
 
-## Design
+The card includes:
 
-Tesla's product UI is used as the design reference, not copied pixel-for-pixel. The goal is a restrained, vehicle-first experience inside Home Assistant while retaining Home Assistant's live state, controls, Recorder history, and integration-specific capabilities.
+- Native keyboard-accessible controls
+- `aria-pressed` for toggles
+- `aria-busy` while commands are pending
+- `aria-live` command feedback
+- Keyboard activation for interactive vehicle controls
+- Focus-visible treatment
+- Escape handling for menus and confirmations
+- Reduced-motion support
+- Descriptive image and SVG labels
+
+## Performance and reliability
+
+The card remains a single-file, no-build Home Assistant resource.
+
+It uses:
+
+- Render signatures to avoid unnecessary DOM replacement
+- Input-focus deferral for active controls
+- Cached Recorder history and trip calculations
+- Registry and history retry/backoff behavior
+- Capability scoring instead of fragile first-match entity selection
+- Shadow DOM and delegated event handling
+- CSS container queries where supported
+
+There are no npm dependencies or build artifacts required for installation.
+
+## Design philosophy
+
+Tesla's product UI is the visual reference, not a pixel-for-pixel copy.
+
+The card prioritizes:
+
+1. The vehicle and its current state
+2. Useful controls
+3. Clear semantic feedback
+4. Reliable Home Assistant integration
+5. Location and history
+6. Minimal decoration
+
+The implementation intentionally avoids inventing vehicle capabilities or rendering controls that the connected integration cannot support.
 
 ## Development
 
-Tesla Share uses Home Assistant's WebSocket entity and device registries for automatic discovery. The card does not depend on undocumented `hass.entities` or `hass.devices` properties. Recorder history requests are cached per vehicle set and history window so normal Home Assistant state updates do not repeatedly query Recorder.
+The repository includes a local `preview.html` fixture for browser testing.
 
-The current vehicle command center is on `main`.
+Start a local server:
 
+```bash
+python3 -m http.server 8631
+```
 
-## v4 reliability and vehicle experience
+Then open:
 
-The current main branch includes the Phase 1/2 hardening pass:
+```
+http://localhost:8631/preview.html?v=<incrementing-number>
+```
 
-- Registry discovery retries after temporary WebSocket failures instead of permanently giving up.
-- Recorder-backed route history uses a configurable cache TTL to avoid stale routes without hammering Recorder.
-- Tesla capability discovery uses scored, domain/device-class/name matching rather than a single first-match heuristic.
-- High-impact commands such as unlock, honk, flash, remote start, frunk, and trunk request confirmation in the card UI.
-- Vehicle artwork is model-aware for Model 3, Model Y, Model S, Model X, and Cybertruck, with more detailed glass, wheels, lights, body seams, charging animation, and open-state visualization.
-- Per-vehicle paint selection remains persisted by device ID.
+The fixture mocks Home Assistant state, registries, Recorder history, and service calls.
 
-Optional history cache configuration:
+Keep the registry mock and state mock synchronized because discovery is registry-driven.
 
-    type: custom:tesla-share-card
-    history_days: 7
-    history_ttl_ms: 300000
+### Basic release checks
 
-`history_ttl_ms` defaults to 300000 (5 minutes) and is clamped between 60 seconds and 15 minutes.
+```bash
+node -e 'const fs=require("fs"); new Function(fs.readFileSync("tesla-share-card.js","utf8")); console.log("parser ok")'
+node -e 'new Function("this is not valid js ((")'
+git diff --check
+LC_ALL=C grep -nP '[^\\x00-\\x7F]' tesla-share-card.js
+git status --short
+git diff --stat
+```
 
-## v5 Phase 3/4 command center and trip intelligence
+The production JavaScript should remain ASCII-only.
 
-The current main branch adds a deeper control and history layer:
+## Project status
 
-### Phase 3 controls
+The current vehicle command center is maintained on `main`.
 
-- Native in-card confirmation UI for high-impact commands instead of browser `confirm()` dialogs.
-- Command execution shows immediate feedback and clears stale feedback automatically.
-- Failed Home Assistant service calls are surfaced as a visible card message.
-- Climate controls use the Home Assistant climate entity when exposed:
-  - HVAC mode cycling
-  - Fan mode cycling
-  - Temperature selection and apply
-- Existing charging limit/amp sliders continue to use the discovered entities.
-- Controls remain capability-driven, so unavailable functions are omitted.
+Current main includes the October 1, 2026 hardening work covering:
 
-### Phase 4 trip intelligence
+- State and unavailable handling
+- Service-call acknowledgement
+- Native unit handling
+- Recorder route/trip terminology
+- Vehicle artwork reliability
+- Entity selection hardening
+- Charge-port versus vehicle-lock matching
+- Model-aware vehicle presentation
+- Capability-driven controls
 
-Recorder GPS points are converted into approximate trips instead of being shown only as one giant route.
+No new browser-suite result is claimed here unless the suite has been rerun against the current commit.
 
-- Segments history when Recorder gaps exceed 30 minutes.
-- Estimates trip distance from consecutive GPS coordinates.
-- Shows recent detected trips with distance, start/end time, duration, and route preview.
-- Keeps the full retained GPS route underneath the trip timeline.
-- Trip detection is deliberately conservative and depends on Recorder sampling density and latitude/longitude retention.
+## License
 
-Optional configuration:
-
-    type: custom:tesla-share-card
-    history_days: 30
-    history_ttl_ms: 300000
-
-`history_days` is capped at 30 days. Trip distance is an estimate from recorded GPS points, not Tesla's odometer or official trip data.
+See the repository license file for the project's current license terms.
