@@ -779,21 +779,44 @@ return '<svg class="seat-cabin" viewBox="0 0 640 '+cabinHeight+'" role="group" a
     const activeInput=this.shadowRoot.activeElement;
     if(!force&&activeInput&&/^(range|color)$/.test(activeInput.type)){this._pendingRender=true;return}
     const h=this._hass,all=this._registry?.entities||[],by=new Map();
+
+    // Most Tesla entities have a device_id. A few versions/configurations of
+    // integrations can expose valid Tesla entities without one, so don't drop
+    // those entities and render an empty dashboard. Group orphaned entities by
+    // the vehicle portion of their friendly name/entity id.
+    const vehicleKey=(e)=>{
+      const raw=String(
+        e.state?.attributes?.friendly_name ||
+        e.name ||
+        e.id ||
+        ""
+      ).toLowerCase().replace(/[._-]+/g," ");
+      const cleaned=raw
+        .replace(/\\b(battery|charge|charging|range|climate|hvac|lock|door|window|frunk|trunk|horn|flash|sentry|wake|refresh|odometer|location|vehicle|status|online|temperature|inside|outside|tire|tpms|seat|steering|charger|connector|port|power|amps|current|limit|energy|time|schedule|departure|arrival|distance|parking|brake|shift|user|present|remote|start|keyless|driving|switch|button|sensor|number|select|cover|tracker)\\b/g," ")
+        .replace(/\\s+/g," ").trim();
+      return cleaned || "tesla";
+    };
+
     for(const e of all){
       const state=h.states?.[e.id];
       if(!state)continue;
       e.state=state;
-      if(!e.device_id)continue;
-      const k=e.device_id;
+      const k=e.device_id || "orphan:"+vehicleKey(e);
       if(!by.has(k))by.set(k,[]);
       by.get(k).push(e);
     }
-    this._cars=[...by].map(([id,es])=>({
-      id,device_id:id,
-      name:deviceName(this._registry,id),
-      model:vehicleModel(h,this._registry,id,es),
-      picked:pick(es)
-    }));
+
+    this._cars=[...by].map(([id,es])=>{
+      const deviceId=id.startsWith("orphan:")?null:id;
+      const fallbackName=es.map(e=>e.state?.attributes?.friendly_name||e.name).find(Boolean);
+      return {
+        id,
+        device_id:deviceId,
+        name:deviceId?deviceName(this._registry,deviceId):String(fallbackName||"Tesla").replace(/\\s+(battery|charge|charging|range|climate|lock|door|window|frunk|trunk|horn|sentry|odometer|location|status).*$/i,"").trim()||"Tesla",
+        model:vehicleModel(h,this._registry,deviceId,es),
+        picked:pick(es)
+      };
+    }).filter(c=>Object.values(c.picked).some(Boolean));
     const signature=JSON.stringify(this._cars.map(c=>[c.id,...Object.values(c.picked).filter(Boolean).map(e=>{const st=h.states[e.id];return[e.id,st?.state,st?.last_updated,st?.attributes]})]));
     if(!force&&signature===this._renderSignature&&this.shadowRoot.querySelector(".wrap"))return;
     this._renderSignature=signature;
