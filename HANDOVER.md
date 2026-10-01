@@ -6,7 +6,7 @@ Last updated: October 1, 2026
 
 - Repository: mattamays-ai/tesla-share-dashboard
 - Default branch: main
-- Current main commit: 23fe5ad5792283d456874c9b5992ea228297e89f
+- Current main commit: 911221a6ea046554250c598d11416dd3a3c3807e ("Fix render crash and entity-matching regexes")
 - Main is authoritative. Do not merge the older v2-tesla-app-ui or v3-vehicle-command-center branches back into main unless explicitly required.
 - HACS dashboard plugin, single-file browser-native custom element, no build step.
 - Primary source: tesla-share-card.js
@@ -19,11 +19,13 @@ Last updated: October 1, 2026
 
 The October 1 hardening pass is on main. It includes state handling, command acknowledgement, native-unit handling, Recorder route/trip wording, vehicle-art reliability, and entity-selection hardening.
 
+A follow-up defect-fix pass landed in commit 911221a: it fixed a temporal-dead-zone ReferenceError in _carHtml (tempUnit used before declaration) that crashed every card render, repaired seven over-escaped regex literals in entity discovery, Tesla-signature matching, dashboard-overview charging detection, and vehicle-name cleanup, redesigned the fallback signature match to use substring matching (word-boundary regexes never match underscore entity slugs), replaced five non-ASCII characters with unicode escapes, removed a dead ternary in setConfig, and added a hex-format guard on configured colors before they are interpolated into style attributes.
+
 The current source was fetched from main immediately before this handover synchronization. The current tesla-share-card.js blob SHA is:
 
-e07929ac92042e892f2d17939b3e9f01b49686fb
+b86d4fb5e1a16992120172f77504821b888d6786
 
-There is no CI workflow currently associated with this release. Do not claim a new browser-suite pass unless it has actually been run.
+There is no CI workflow currently associated with this release. Do not claim a new browser-suite pass unless it has actually been run. The 911221a fixes were verified with local Node harnesses (render, discovery fallback, adversarial cases) and the README parser check; a fresh browser-suite run on the current commit has NOT been performed.
 
 ## 3. Card contract
 
@@ -161,7 +163,7 @@ The current _service() behavior is intentionally honest about Home Assistant exe
 3. If the selected entity changes, the notice is:
    "Vehicle state updated"
 4. If the service call succeeds but no observed state change occurs during the short window, the notice is:
-   "Command accepted · vehicle state pending"
+   "Command accepted \u00b7 vehicle state pending"
 5. If Home Assistant rejects the service call, the card shows:
    "Command failed: <bounded error>"
 
@@ -295,18 +297,43 @@ Before release:
 
 This handover is synchronized to the October 1, 2026 main state represented by:
 
-23fe5ad5792283d456874c9b5992ea228297e89f
+911221a6ea046554250c598d11416dd3a3c3807e
 
-The previous handover receipt pointing to 62a84a85a5b9d67f2da93ec1338dacdd78c141e6 is historical and no longer describes the current main state.
+The previous handover receipt pointing to 23fe5ad5792283d456874c9b5992ea228297e89f is historical and no longer describes the current main state. (The 23fe5ad receipt itself had replaced 62a84a85a5b9d67f2da93ec1338dacdd78c141e6.)
 
 Key documentation corrections made here:
 
-- current main commit is updated
+- current main commit and card blob SHA are updated to 911221a / b86d4fb
+- the defect-fix pass (render crash, regex repairs, color guard) is documented in section 2
 - command acknowledgement wording matches _service()
 - paint treatment wording matches the current CSS-filter implementation
 - TPMS/native-unit behavior is documented
 - Recorder route and estimated-trip terminology matches the current UI
 - current verification status does not overclaim a new 51/51 browser run
 - the remote-image dependency description reflects the removal of cross-origin mask recoloring
+
+## 14. Cross-agent protocol (instructions for any AI agent working in this repo)
+
+These instructions apply to every AI agent (Claude, Codex, or any other assistant) that touches this repository. They are part of the handover and carry the same authority as the release discipline rules.
+
+### Dialogue is required, not optional
+
+1. **Ask before you assume.** If any instruction, requirement, or repository state is ambiguous, you must ask the maintainer a clarifying question before acting. Do not guess and do not silently pick an interpretation. The only exception: if the ambiguity is fully reversible (no data loss, no destructive change, no public-facing effect), you may pick the most conventional option, but you MUST state the assumption explicitly in your report and in the task record.
+2. **Ask before destructive or external actions.** Pushing, deleting branches, rewriting history, force-pushing, editing release artifacts, or anything visible outside the working tree requires explicit approval first. "Push it" said once covers the task in front of you, not future tasks.
+3. **Ask when you find something unexpected.** If the code contradicts the documentation, or a verification claim in this handover fails to reproduce, stop and report the discrepancy. Do not silently "fix" the docs to match what you found, and do not silently change code to match the docs. Dialogue first.
+4. **Report in dialogue, not monologue.** Progress reports should surface open questions and failed assumptions, not just completed steps. An agent that only reports success is hiding the information the maintainer needs.
+
+### Questioning behaviors (mandatory self-audit)
+
+5. **Question the handover itself.** Verify current state against `git log` / `git rev-parse` before trusting any SHA or claim in this document. This handover has gone stale before; treat every claim as a hypothesis to verify, not a fact to obey.
+6. **Question your own findings.** Before reporting a bug as confirmed, reproduce it at runtime or with a harness. Before reporting a bug as refuted, prove the refutation at runtime too. A code read alone is never evidence.
+7. **Question your own completion.** Before claiming done: every requirement implemented and evidenced, every affected integration verified, adversarial cases tried, and a fresh validation pass run after the last change. If any item is unverified, report `STATUS: NOT DONE` with the specific remaining items. Never convert an unverified claim into a positive summary.
+8. **Question scope.** Do not add unrequested features, dependencies, refactors, or documentation rewrites. If you believe extra work is needed, propose it and wait for the answer.
+
+### Working rules
+
+9. Verify before modifying; understand before changing.
+10. Keep the audit evidence (harnesses, checks) reproducible; run the section 11 release checks before claiming any release state.
+11. Do not merge or delete the v2-tesla-app-ui / v3-vehicle-command-center branches.
 
 End of handover.
