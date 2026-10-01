@@ -2,7 +2,7 @@
 
 A Tesla-inspired Home Assistant vehicle command center for **Tesla Custom** and **Tesla Fleet**.
 
-Tesla Share is designed around one idea: put the car first. It combines live vehicle state, practical controls, model-aware vehicle artwork, charging and climate controls, and Recorder-backed location history in a single Home Assistant card.
+Tesla Share is designed around one idea: put the car first. It combines live vehicle state, practical controls, model-aware vehicle artwork, charging and climate controls, and Recorder-backed location history in a single Home Assistant resource that can run as a normal card or as a Tesla-style multi-view dashboard.
 
 ## What it does
 
@@ -107,10 +107,31 @@ colors:
   My Model Y: "#171A20"
 ```
 
+### Tesla dashboard mode
+
+Set `mode: dashboard` when Tesla Share should behave as its own Tesla-style command center rather than a normal embedded card:
+
+```yaml
+type: custom:tesla-share-card
+mode: dashboard
+history_days: 7
+```
+
+Dashboard mode provides:
+
+- A Tesla-format **Overview / Garage** page showing every discovered vehicle
+- A dedicated dashboard view for **each detected Tesla**
+- Tesla-style navigation between Overview and individual vehicles
+- The same automatic discovery, controls, command feedback, charging, climate, TPMS, location, and Recorder history used by card mode
+- No manually entered entity IDs
+
+The vehicle views are generated from the vehicles Home Assistant discovers, so adding or removing a Tesla automatically changes the dashboard navigation. This is intentionally implemented inside the custom card because Home Assistant dashboard views themselves are configured statically; the Tesla Share dashboard view can therefore remain fully dynamic.
+
 ### Configuration options
 
 | Option | Default | Range | Purpose |
 | --- | ---: | ---: | --- |
+| `mode` | `card` | `card` / `dashboard` | Presentation mode. Dashboard mode provides a Tesla-style Overview plus one view per detected vehicle. |
 | `history_days` | 7 | 1-30 | Recorder history window |
 | `history_ttl_ms` | 300000 | 60000-900000 | Recorder cache lifetime |
 | `colors` | {} | Any | Per-vehicle paint colors |
