@@ -100,3 +100,37 @@ Optional history cache configuration:
     history_ttl_ms: 300000
 
 `history_ttl_ms` defaults to 300000 (5 minutes) and is clamped between 60 seconds and 15 minutes.
+
+## v5 Phase 3/4 command center and trip intelligence
+
+The current main branch adds a deeper control and history layer:
+
+### Phase 3 controls
+
+- Native in-card confirmation UI for high-impact commands instead of browser `confirm()` dialogs.
+- Command execution shows immediate feedback and clears stale feedback automatically.
+- Failed Home Assistant service calls are surfaced as a visible card message.
+- Climate controls use the Home Assistant climate entity when exposed:
+  - HVAC mode cycling
+  - Fan mode cycling
+  - Temperature selection and apply
+- Existing charging limit/amp sliders continue to use the discovered entities.
+- Controls remain capability-driven, so unavailable functions are omitted.
+
+### Phase 4 trip intelligence
+
+Recorder GPS points are converted into approximate trips instead of being shown only as one giant route.
+
+- Segments history when Recorder gaps exceed 30 minutes.
+- Estimates trip distance from consecutive GPS coordinates.
+- Shows recent detected trips with distance, start/end time, duration, and route preview.
+- Keeps the full retained GPS route underneath the trip timeline.
+- Trip detection is deliberately conservative and depends on Recorder sampling density and latitude/longitude retention.
+
+Optional configuration:
+
+    type: custom:tesla-share-card
+    history_days: 30
+    history_ttl_ms: 300000
+
+`history_days` is capped at 30 days. Trip distance is an estimate from recorded GPS points, not Tesla's odometer or official trip data.
