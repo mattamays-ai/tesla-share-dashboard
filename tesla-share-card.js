@@ -54,41 +54,56 @@ const domain = (d) => (e) => e.id.startsWith(d + ".");
 const dc = (name) => (e) => e.state?.attributes?.device_class === name;
 
 function pick(entities) {
-  const byText = re => find(entities, [e => re.test((e.id + " " + (e.state?.attributes?.friendly_name || "")).toLowerCase())]);
+  const text = e => (e.id + " " + (e.name || "") + " " + (e.state?.attributes?.friendly_name || "")).toLowerCase();
+  const best = (tests, penalties = []) => {
+    let winner = null, bestScore = -Infinity;
+    for (const e of entities) {
+      const t = text(e);
+      if (penalties.some(re => re.test(t))) continue;
+      let score = 0;
+      for (const test of tests) score += test(e, t);
+      if (score > bestScore) { bestScore = score; winner = e; }
+    }
+    return bestScore > 0 ? winner : null;
+  };
+  const rx = re => (e,t) => re.test(t) ? 5 : 0;
+  const suffix = sx => (e) => sx.some(s => e.id.endsWith(s)) ? 7 : 0;
+  const dom = d => (e) => e.id.startsWith(d + ".") ? 6 : 0;
+  const cls = name => (e) => e.state?.attributes?.device_class === name ? 8 : 0;
   return {
-    battery: find(entities,[e=>domain("sensor")(e)&&dc("battery")(e)&&!/powerwall|backup/.test(e.id),ends(["_battery","_battery_level"])]),
-    range: find(entities,[byText(/battery.*range|estimated.*range/),ends(["_battery_range","_estimated_range"])]),
-    charging: find(entities,[byText(/charging.*state|charge.*state/),ends(["_charging_state","_charging"])]),
-    online: find(entities,[byText(/online|connectivity|vehicle.*status/),ends(["_online","_status"]),dc("connectivity")]),
-    asleep: find(entities,[byText(/asleep|sleeping/),ends(["_asleep"])]),
-    inside: find(entities,[byText(/inside.*temperature|cabin.*temperature|interior.*temperature/),ends(["_temperature_inside","_inside_temperature"])]),
-    outside: find(entities,[byText(/outside.*temperature|exterior.*temperature/),ends(["_temperature_outside","_outside_temperature"])]),
-    lock: find(entities,[domain("lock"),byText(/door.*lock|vehicle.*lock|lock/),ends(["_lock"])]),
-    climate: find(entities,[domain("climate"),byText(/climate|hvac/)]),
-    sentry: find(entities,[byText(/sentry/),ends(["_sentry_mode"])]),
-    port: find(entities,[byText(/charge.*port|charger.*door/),ends(["_charger_door","_charge_port_door"])]),
-    frunk: find(entities,[byText(/frunk/),ends(["_frunk"])]),
-    trunk: find(entities,[byText(/trunk|boot/),ends(["_trunk","_boot"])]),
-    windows: find(entities,[byText(/windows|window.*state/),ends(["_windows","_vent_windows"])]),
-    doorDriver: byText(/driver.*door|left.*front.*door|front.*left.*door/),
-    doorPassenger: byText(/passenger.*door|right.*front.*door|front.*right.*door/),
-    doorRearLeft: byText(/rear.*left.*door|left.*rear.*door/),
-    doorRearRight: byText(/rear.*right.*door|right.*rear.*door/),
-    windowDriver: byText(/driver.*window|left.*front.*window/),
-    windowPassenger: byText(/passenger.*window|right.*front.*window/),
-    windowRear: byText(/rear.*window/),
-    wake: find(entities,[byText(/wake/),ends(["_wake_up","_wake"])]),
-    flash: find(entities,[byText(/flash.*light|lights.*flash/),ends(["_flash_lights"])]),
-    horn: find(entities,[byText(/horn|honk/),ends(["_horn","_honk_horn"])]),
-    start: find(entities,[byText(/remote.*start|keyless/),ends(["_remote_start","_keyless_driving"])]),
-    refresh: find(entities,[byText(/force.*data.*update|refresh/),ends(["_force_data_update"])]),
-    power: find(entities,[byText(/charger.*power|charging.*power/),ends(["_charger_power"])]),
-    added: find(entities,[byText(/energy.*added|charge.*energy.*added/),ends(["_energy_added","_charge_energy_added"])]),
-    timeLeft: find(entities,[byText(/time.*charge|time.*full|charge.*complete/),ends(["_time_charge_complete","_time_to_full_charge"])]),
-    chargeSwitch: find(entities,[domain("switch"),byText(/charger|charge/)]),
-    limit: find(entities,[byText(/charge.*limit/),ends(["_charge_limit"])]),
-    amps: find(entities,[byText(/charging.*amps|charge.*current/),ends(["_charging_amps","_charge_current"])]),
-    tracker: find(entities,[domain("device_tracker"),byText(/location|vehicle/),e=>!/destination|route/.test(e.id)]),
+    battery: best([cls("battery"),dom("sensor"),suffix(["_battery","_battery_level"])] , [/powerwall|backup|solar/]),
+    range: best([rx(/battery.*range|estimated.*range/),suffix(["_battery_range","_estimated_range"])]),
+    charging: best([rx(/charging.*state|charge.*state/),suffix(["_charging_state","_charging"])]),
+    online: best([rx(/online|connectivity|vehicle.*status/),cls("connectivity"),suffix(["_online","_status"])]),
+    asleep: best([rx(/asleep|sleeping/),suffix(["_asleep"])]),
+    inside: best([rx(/inside.*temperature|cabin.*temperature|interior.*temperature/),suffix(["_temperature_inside","_inside_temperature"])]),
+    outside: best([rx(/outside.*temperature|exterior.*temperature/),suffix(["_temperature_outside","_outside_temperature"])]),
+    lock: best([dom("lock"),rx(/door.*lock|vehicle.*lock|lock/),suffix(["_lock"])]),
+    climate: best([dom("climate"),rx(/climate|hvac/)]),
+    sentry: best([rx(/sentry/),suffix(["_sentry_mode"])]),
+    port: best([rx(/charge.*port|charger.*door/),suffix(["_charger_door","_charge_port_door"])]),
+    frunk: best([rx(/frunk/),suffix(["_frunk"])]),
+    trunk: best([rx(/trunk|boot/),suffix(["_trunk","_boot"])]),
+    windows: best([rx(/windows|window.*state/),suffix(["_windows","_vent_windows"])]),
+    doorDriver: best([rx(/driver.*door|left.*front.*door|front.*left.*door/)]),
+    doorPassenger: best([rx(/passenger.*door|right.*front.*door|front.*right.*door/)]),
+    doorRearLeft: best([rx(/rear.*left.*door|left.*rear.*door/)]),
+    doorRearRight: best([rx(/rear.*right.*door|right.*rear.*door/)]),
+    windowDriver: best([rx(/driver.*window|left.*front.*window/)]),
+    windowPassenger: best([rx(/passenger.*window|right.*front.*window/)]),
+    windowRear: best([rx(/rear.*window/)]),
+    wake: best([rx(/wake/),suffix(["_wake_up","_wake"])]),
+    flash: best([rx(/flash.*light|lights.*flash/),suffix(["_flash_lights"])]),
+    horn: best([rx(/horn|honk/),suffix(["_horn","_honk_horn"])]),
+    start: best([rx(/remote.*start|keyless/),suffix(["_remote_start","_keyless_driving"])]),
+    refresh: best([rx(/force.*data.*update|refresh/),suffix(["_force_data_update"])]),
+    power: best([rx(/charger.*power|charging.*power/),suffix(["_charger_power"])]),
+    added: best([rx(/energy.*added|charge.*energy.*added/),suffix(["_energy_added","_charge_energy_added"])]),
+    timeLeft: best([rx(/time.*charge|time.*full|charge.*complete/),suffix(["_time_charge_complete","_time_to_full_charge"])]),
+    chargeSwitch: best([dom("switch"),rx(/charger|charge/)]),
+    limit: best([rx(/charge.*limit/),dom("number"),suffix(["_charge_limit"])]),
+    amps: best([rx(/charging.*amps|charge.*current/),dom("number"),suffix(["_charging_amps","_charge_current"])]),
+    tracker: best([dom("device_tracker"),rx(/location|vehicle/)], [/destination|route/]),
   };
 }
 
