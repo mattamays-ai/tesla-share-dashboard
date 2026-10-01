@@ -20,29 +20,53 @@ function unavailable(hass,ent){return !!ent&&/^(unavailable|unknown)$/i.test(sta
 
 async function loadTeslaRegistry(hass) {
   if (!hass?.callWS) return { entities: [], devices: {} };
-  const [entityResult, deviceResult] = await Promise.all([
-    hass.callWS({ type: "config/entity_registry/list_for_display" }),
-    hass.callWS({ type: "config/device_registry/list" }),
-  ]);
-  const rawEntities = Array.isArray(entityResult)
-    ? entityResult
-    : (entityResult?.entities || entityResult?.result?.entities || []);
-  const rawDevices = Array.isArray(deviceResult)
-    ? deviceResult
-    : (deviceResult?.devices || deviceResult?.result?.devices || []);
-  const entities = rawEntities
+
+  // Use the compact display registry first, but fall back to the full entity
+  // registry. Discovery must not fail just because one registry endpoint is
+  // unavailable or returns a slightly different response shape.
+  const entityResponse = await (async () => {
+    try {
+      const result = await hass.callWS({ type: "config/entity_registry/list_for_display" });
+      const entities = Array.isArray(result)
+        ? result
+        : (result?.entities || result?.result?.entities || []);
+      if (entities.length) return entities;
+    } catch (_) {}
+    try {
+      const result = await hass.callWS({ type: "config/entity_registry/list" });
+      return Array.isArray(result)
+        ? result
+        : (result?.entities || result?.result?.entities || []);
+    } catch (_) {
+      return [];
+    }
+  })();
+
+  let rawDevices = [];
+  try {
+    const result = await hass.callWS({ type: "config/device_registry/list" });
+    rawDevices = Array.isArray(result)
+      ? result
+      : (result?.devices || result?.result?.devices || []);
+  } catch (_) {
+    rawDevices = [];
+  }
+
+  const entities = entityResponse
     .map((meta) => ({
-      id: meta.ei,
-      platform: meta.pl,
-      device_id: meta.di || null,
-      name: meta.en || "",
-      state: hass.states?.[meta.ei],
+      id: meta?.ei || meta?.entity_id || null,
+      platform: String(meta?.pl || meta?.platform || "").toLowerCase(),
+      device_id: meta?.di || meta?.device_id || null,
+      name: meta?.en || meta?.name || "",
+      state: meta?.ei ? hass.states?.[meta.ei] : hass.states?.[meta?.entity_id],
     }))
     .filter((e) => e.id && e.state && PLATFORMS.has(e.platform));
+
   const devices = {};
   for (const device of rawDevices) {
     if (device?.id) devices[device.id] = device;
   }
+
   return { entities, devices };
 }
 
