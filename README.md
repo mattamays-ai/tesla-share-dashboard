@@ -80,3 +80,23 @@ Tesla's product UI is used as the design reference, not copied pixel-for-pixel. 
 Tesla Share uses Home Assistant's WebSocket entity and device registries for automatic discovery. The card does not depend on undocumented `hass.entities` or `hass.devices` properties. Recorder history requests are cached per vehicle set and history window so normal Home Assistant state updates do not repeatedly query Recorder.
 
 The current vehicle command center is on `main`.
+
+
+## v4 reliability and vehicle experience
+
+The current main branch includes the Phase 1/2 hardening pass:
+
+- Registry discovery retries after temporary WebSocket failures instead of permanently giving up.
+- Recorder-backed route history uses a configurable cache TTL to avoid stale routes without hammering Recorder.
+- Tesla capability discovery uses scored, domain/device-class/name matching rather than a single first-match heuristic.
+- High-impact commands such as unlock, honk, flash, remote start, frunk, and trunk request confirmation in the card UI.
+- Vehicle artwork is model-aware for Model 3, Model Y, Model S, Model X, and Cybertruck, with more detailed glass, wheels, lights, body seams, charging animation, and open-state visualization.
+- Per-vehicle paint selection remains persisted by device ID.
+
+Optional history cache configuration:
+
+    type: custom:tesla-share-card
+    history_days: 7
+    history_ttl_ms: 300000
+
+`history_ttl_ms` defaults to 300000 (5 minutes) and is clamped between 60 seconds and 15 minutes.
