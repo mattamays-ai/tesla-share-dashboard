@@ -60,6 +60,7 @@ function pick(entities) {
       if (penalties.some(re => re.test(t))) continue;
       let score = 0;
       for (const test of tests) score += test(e, t);
+      if (/^(unavailable|unknown)$/i.test(e.state?.state||"")) score -= 8;
       if (score > bestScore) { bestScore = score; winner = e; }
     }
     return bestScore > 0 ? winner : null;
@@ -104,7 +105,7 @@ function pick(entities) {
     tpmsWarnRR: best([rx(/tire.*pressure.*warning.*rear.*right|rear.*right.*tire.*warning/)]),
     inside: best([rx(/inside.*temperature|cabin.*temperature|interior.*temperature/),suffix(["_temperature_inside","_inside_temperature"])]),
     outside: best([rx(/outside.*temperature|exterior.*temperature/),suffix(["_temperature_outside","_outside_temperature"])]),
-    lock: best([rx(/door.*lock|vehicle.*lock/),suffix(["_doors","_door_lock","_vehicle_lock","_lock"])], [/charge.*cable|charge.*port.*latch/]),
+    lock: best([rx(/door.*lock|vehicle.*lock/),suffix(["_doors","_door_lock","_vehicle_lock","_lock"])], [/charge.*cable|charge.*port.*latch|charge.*port.*door|charge.*lock/]),
     climate: best([dom("climate"),rx(/climate|hvac/)]),
     sentry: best([rx(/sentry/),suffix(["_sentry_mode"])]),
     port: best([rx(/charge.*port.*door|charger.*door/),suffix(["_charger_door","_charge_port_door"]),dom("cover")], [/frunk|trunk|boot|window|sunroof/]),
