@@ -182,7 +182,9 @@ function stateOf(hass, ent) {
   return hass.states[ent.id]?.state ?? "";
 }
 function num(hass, ent) {
-  const n = Number(stateOf(hass, ent));
+  const s = stateOf(hass, ent);
+  if (s === "" || /^(unknown|unavailable)$/i.test(s)) return null;
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -326,7 +328,7 @@ class TeslaShareCard extends HTMLElement {
           if(now!==before){changed=true;break}
         }
       }
-      this._notice=changed?"Vehicle state updated":"Command accepted \u00b7 vehicle state pending";
+      this._notice=changed?"Vehicle state updated":this._asleepHint(ent);
       return true;
     }catch(e){
       const msg=String(e?.message||e?.error?.message||e||"Unknown Home Assistant error").replace(/\s+/g," ").slice(0,180);
@@ -336,6 +338,12 @@ class TeslaShareCard extends HTMLElement {
       this._busy.delete(ent.id);this._render(true);clearTimeout(this._noticeTimer);
       this._noticeTimer=setTimeout(()=>{this._notice="";this._render(true)},5000);
     }
+  }
+  _asleepHint(ent){
+    const car=(this._cars||[]).find(c=>c&&c.picked&&Object.values(c.picked).some(e=>e&&e.id===ent.id));
+    const online=car&&car.picked?.online?String(stateOf(this._hass,car.picked.online)).toLowerCase():"";
+    const asleep=car&&car.picked?.asleep?stateOf(this._hass,car.picked.asleep)==="on":/asleep|offline/.test(online);
+    return asleep?"Vehicle asleep \u00b7 wake it and retry":"Command accepted \u00b7 vehicle state pending";
   }
   async _action(ent,kind,key){
     if(!ent)return;
@@ -379,10 +387,25 @@ class TeslaShareCard extends HTMLElement {
     }else if(action==="mode"){
       const modes=a.hvac_modes||[],i=modes.indexOf(a.hvac_mode),next=modes[(i+1+modes.length)%Math.max(1,modes.length)];
       if(next)await this._service(ent,"set_hvac_mode",{hvac_mode:next});
+    }else if(action==="preset"){
+      const modes=a.preset_modes||[];if(!modes.length)return;
+      const i=modes.indexOf(a.preset_mode),next=modes[(i+1+modes.length)%modes.length];
+      if(next)await this._service(ent,"set_preset_mode",{preset_mode:next});
     }else if(action==="fan"){
       const modes=a.fan_modes||[],i=modes.indexOf(a.fan_mode),next=modes[(i+1+modes.length)%Math.max(1,modes.length)];
       if(next)await this._service(ent,"set_fan_mode",{fan_mode:next});
     }
+  }
+  _modeArt(car){
+    const st=this._hass?.states?.[car?.picked?.climate?.id],preset=String(st?.attributes?.preset_mode||"").toLowerCase();
+    if(!preset||preset==="none"||preset==="off")return "";
+    const cfg=this._config?.mode_images||{};
+    let url="";
+    for(const k in cfg)if(preset.includes(String(k).toLowerCase())&&/^https?:\/\//i.test(String(cfg[k])))url=cfg[k];
+    const art=url
+      ?'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:.35;color:#dfe1e3">'+(preset.includes("dog")?this._icon("dog"):preset.includes("camp")?this._icon("camp"):preset.includes("defrost")?this._icon("defrost"):this._icon("keep"))+'</span><img src="'+escAttr(url)+'" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55">'
+      :'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:.35;color:#dfe1e3">'+(preset.includes("dog")?this._icon("dog"):preset.includes("camp")?this._icon("camp"):preset.includes("defrost")?this._icon("defrost"):this._icon("keep"))+'</span>';
+    return '<div style="position:absolute;inset:0;pointer-events:none;border-radius:14px;overflow:hidden">'+art+'</div>';
   }
   _color(car){
     const key=car.device_id||car.id||car.name,cfg=this._config?.colors||{};
@@ -392,12 +415,15 @@ class TeslaShareCard extends HTMLElement {
     try{return localStorage.getItem("tesla-share-color:"+key)||def}catch{return def}
   }
   _paintFilter(paint){
-    const p=String(paint||"").toLowerCase();
-    if(p==="#16181a")return "brightness(.38) saturate(.72)";
-    if(/b8201a|8f1017|5a1020/.test(p))return "saturate(1.8) hue-rotate(-12deg) brightness(.78)";
-    if(/2a4a78|7f9cab|c8d8e2/.test(p))return "saturate(1.35) hue-rotate(155deg)";
-    if(/43474b|6e7377|b0b2ac|cbcdcd/.test(p))return "grayscale(.25) saturate(.65) brightness(1.02)";
-    return "saturate(.72) brightness(1.08)";
+    const m=/^#([0-9a-fA-F]{6})$/.exec(String(paint||"").trim());
+    if(!m)return "saturate(.72) brightness(1.08)";
+    const n=parseInt(m[1],16),r=(n>>16&255)/255,g=(n>>8&255)/255,b=(n&255)/255;
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2;
+    let h=0,s=0;
+    if(mx!==mn){const d=mx-mn;s=l>.5?d/(2-mx-mn):d/(mx+mn);h=(mx===r?((g-b)/d+(g<b?6:0)):mx===g?((b-r)/d+2):((r-g)/d+4))*60}
+    const rotate=Math.round(((h-40)%360+360)%360);
+    const sat=(0.9+2.4*s).toFixed(2),bri=Math.max(.42,Math.min(1.1,l*1.3+.12)).toFixed(2);
+    return "grayscale(1) sepia(1) saturate("+sat+") hue-rotate("+rotate+"deg) brightness("+bri+")";
   }
   _onClick(e){
     const path=typeof e.composedPath==="function"?e.composedPath():[];
@@ -418,6 +444,14 @@ class TeslaShareCard extends HTMLElement {
       return;
     }
     const car=this._cars?.[+b.dataset.car];if(!car)return;
+    if(b.dataset.act==="climate-open"){
+      this._climateOpen=this._climateOpen||{};this._climateOpen[car.id]=true;this._render(true);
+      const sec=this.shadowRoot.querySelectorAll('[data-sec="climate"]')[+b.dataset.car]||this.shadowRoot.querySelector('[data-sec="climate"]');
+      if(sec&&sec.scrollIntoView)sec.scrollIntoView({behavior:"smooth",block:"nearest"});
+      return;
+    }
+    if(b.dataset.act==="climate-power"){const ent=car.picked?.climate;if(ent)this._service(ent,b.dataset.power==="on"?"turn_on":"turn_off");return}
+    if(b.dataset.act==="climate-preset"){this._climateAction(car,"preset");return}
     if(b.dataset.act==="climate-mode"){this._climateAction(car,"mode");return}
     if(b.dataset.act==="climate-fan"){this._climateAction(car,"fan");return}
     if(b.dataset.act==="climate-temp-apply"){this._climateAction(car,"temp");return}
@@ -612,7 +646,11 @@ class TeslaShareCard extends HTMLElement {
       wake:'<path d="M20 12a8 8 0 1 1-2.3-5.7M20 3v4h-4"/>',
       refresh:'<path d="M20 12a8 8 0 1 1-2.3-5.7M20 3v4h-4"/>',
       start:'<path d="M7 4l13 8-13 8V4z"/>',
-      plug:'<path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0V8z"/><path d="M12 16v5"/>'
+      plug:'<path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0V8z"/><path d="M12 16v5"/>',
+      dog:'<circle cx="9" cy="8" r="3.2"/><circle cx="6.6" cy="5.6" r="1.1"/><circle cx="9" cy="12.5" rx="0" r="0"/><path d="M6.2 3.2L5.4 1.2M8 2.9V.9M9.8 3.2l.8-2M4.5 16.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M13.5 16.5h6"/>',
+      camp:'<path d="M12 4L3 20h18L12 4z"/><path d="M12 12l-4 8M12 12l4 8M12 12v8"/>',
+      defrost:'<path d="M12 3v8M8.5 5.5L12 8l3.5-2.5"/><path d="M4 14c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2M4 18c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2"/>',
+      keep:'<circle cx="12" cy="12" r="8"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'
     };
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(P[key]||'<circle cx="12" cy="12" r="8"/>')+'</svg>';
   }
@@ -624,7 +662,7 @@ class TeslaShareCard extends HTMLElement {
     const cfg=this._config||{},model=String(car.model||"").toLowerCase();
     const map=cfg.vehicle_images||{};
     let url="";
-    for(const k in map)if(model.includes(String(k).toLowerCase()))url=map[k];
+    for(const k in map)if(model.includes(String(k).toLowerCase())&&/^https?:\/\//i.test(String(map[k])))url=map[k];
     if(!url){for(const k in VEHICLE_IMGS)if(model.includes(k))url=VEHICLE_IMGS[k]}
     if(!url)return this._stockCar(car,active,open);
     const paint=this._color(car),safe=escAttr(url),filter=this._paintFilter(paint);
@@ -749,7 +787,7 @@ return '<svg class="seat-cabin" viewBox="0 0 640 '+cabinHeight+'" role="group" a
     const chargeOn=stateOf(h,p.chargeSwitch)==="on";
     const controls=[
       domainOf(p.lock)==="lock"&&this._btn(i,"lock",locked?"Unlock":"Lock","toggle",locked),
-      domainOf(p.climate)==="climate"&&this._btn(i,"climate","Climate","toggle",climate),
+      domainOf(p.climate)==="climate"&&this._btn(i,"climate","Climate","climate-open"),
       domainOf(p.horn)==="button"&&this._btn(i,"horn","Honk","press"),
       domainOf(p.flash)==="button"&&this._btn(i,"flash","Flash","press"),
       p.frunk&&/^(cover|button|switch)$/.test(domainOf(p.frunk))&&this._btn(i,"frunk","Frunk","toggle",frunk),
@@ -764,7 +802,7 @@ return '<svg class="seat-cabin" viewBox="0 0 640 '+cabinHeight+'" role="group" a
     const comfort=(domainOf(p.windows)==="cover"?'<button class="ctrl" data-car="'+i+'" data-act="windows-vent">'+this._icon("windows")+'<small>Vent Windows</small></button><button class="ctrl" data-car="'+i+'" data-act="windows-close">'+this._icon("windows")+'<small>Close Windows</small></button>':"");
     const cOpen=!!this._climateOpen?.[car.id],chgOpen=!!this._chargingOpen?.[car.id];
     const tempUnit=h.config?.unit_system?.temperature||"\u00b0F";
-    const interior='<div class="interior seatpage">'+this._seatCabin(h,car,i)+'<div class="interior-chips"><span>Cabin '+esc(inside||"-")+esc(tempUnit)+'</span><span>Outside '+esc(outside||"-")+esc(tempUnit)+'</span><span>'+(climate?"HVAC on":"HVAC off")+'</span></div></div>';
+    const interior='<div class="interior seatpage">'+this._seatCabin(h,car,i)+this._modeArt(car)+'<div class="interior-chips"><span>Cabin '+esc(inside||"-")+esc(tempUnit)+'</span><span>Outside '+esc(outside||"-")+esc(tempUnit)+'</span><span>'+(climate?"HVAC on":"HVAC off")+'</span></div></div>';
     const tires=this._tireHtml(h,p,car);
     const sensors=this._sensorRow(h,p.energyAdded,"flash")+this._sensorRow(h,p.odometer,"gauge")+this._sensorRow(h,p.parkingBrake,"brake")+this._sensorRow(h,p.shift,"shift")+this._sensorRow(h,p.chargeRate,"gauge")+this._sensorRow(h,p.chargeTime,"clock")+this._sensorRow(h,p.schedCharging,"calendar")+this._sensorRow(h,p.schedDeparture,"calendar")+this._sensorRow(h,p.userPresent,"user")+this._sensorRow(h,p.arrival,"hourglass")+this._sensorRow(h,p.distanceArrival,"pin")+this._sensorRow(h,p.charger,"plug");
     const rows='<div><span>Online</span><b>'+esc(p.online?titleState(stateOf(h,p.online)):"Unknown")+'</b></div><div><span>Charge port</span><b class="'+(port?"open-state":"")+'">'+esc(readableState(h,p.port))+'</b></div><div><span>Frunk</span><b class="'+(frunk?"open-state":"")+'">'+esc(readableState(h,p.frunk))+'</b></div><div><span>Trunk</span><b class="'+(trunk?"open-state":"")+'">'+esc(readableState(h,p.trunk))+'</b></div><div><span>Windows</span><b class="'+(windows?"open-state":"")+'">'+esc(readableState(h,p.windows))+'</b></div>'+doors.map(x=>'<div><span>'+esc(x[1])+' door</span><b class="'+(openState(stateOf(h,x[2]))?"open-state":"")+'">'+esc(readableState(h,x[2]))+'</b></div>').join("")+wins.map(x=>'<div><span>'+esc(x[1])+' window</span><b class="'+(openState(stateOf(h,x[2]))?"open-state":"")+'">'+esc(readableState(h,x[2]))+'</b></div>').join("");
@@ -781,8 +819,10 @@ return '<svg class="seat-cabin" viewBox="0 0 640 '+cabinHeight+'" role="group" a
         '<div class="panel charge-panel"><div class="charge-head'+(active?"":" idle")+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L5 13h5l-1 9 8-11h-5l1-9z"/></svg><div><b>'+esc(active?"Charging":(charging||"Not charging"))+'</b><small>'+esc(shortLoc)+'</small></div></div><button class="charge-line" data-car="'+i+'" data-act="charging-tab" aria-expanded="'+chgOpen+'"><span>Charge Limit</span><span><b>'+esc(num(h,p.limit)??"-")+esc(limitUnit)+'</b><i class="chev">&rsaquo;</i></span></button><button class="charge-line" data-car="'+i+'" data-act="charging-tab" aria-expanded="'+chgOpen+'"><span>Amps</span><span><b>'+esc(num(h,p.amps)??"-")+esc(ampsUnit)+'</b><i class="chev">&rsaquo;</i></span></button></div>'+
         '<div class="quick-controls">'+controls+'</div>'+
       '</div>'+
-      '<section><div class="title"><button class="sec-title" data-car="'+i+'" data-act="climate-tab" aria-expanded="'+cOpen+'"><b>Climate</b><i class="chev'+(cOpen?" rot":"")+'">&rsaquo;</i></button><small>'+esc(climateAttrs.hvac_action||"Live cabin state")+'</small></div>'+(cOpen?interior:"")+'<div class="climate"><span>Cabin <b>'+esc(inside||"-")+'</b></span><span>Outside <b>'+esc(outside||"-")+'</b></span><span>Mode <b>'+esc(titleState(climateAttrs.hvac_mode||climateAttrs.hvac_action||"-"))+'</b></span><span>State <b>'+(climate?"ON":"OFF")+'</b></span></div>'+
+      '<section data-sec="climate"><div class="title"><button class="sec-title" data-car="'+i+'" data-act="climate-tab" aria-expanded="'+cOpen+'"><b>Climate</b><i class="chev'+(cOpen?" rot":"")+'">&rsaquo;</i></button><small>'+esc(climateAttrs.hvac_action||"Live cabin state")+'</small></div>'+(cOpen?interior:"")+'<div class="climate"><span>Cabin <b>'+esc(inside||"-")+'</b></span><span>Outside <b>'+esc(outside||"-")+'</b></span><span>Mode <b>'+esc(titleState(climateAttrs.hvac_mode||climateAttrs.hvac_action||"-"))+'</b></span><span>State <b>'+(climate?"ON":"OFF")+'</b></span></div>'+
         (p.climate?'<div class="climate-controls">'+
+          '<button data-car="'+i+'" data-act="climate-power" data-power="'+(climate?"off":"on")+'"'+(this._busy?.has(p.climate.id)?' disabled aria-busy="true"':'')+'>'+(climate?"HVAC Off":"HVAC On")+'</button>'+
+          ((climateAttrs.preset_modes||[]).length?'<button data-car="'+i+'" data-act="climate-preset"'+(this._busy?.has(p.climate.id)?' disabled':'')+'>Preset: '+esc(titleState(climateAttrs.preset_mode||"none"))+'</button>':"")+
           (Number.isFinite(climateTemp)?'<label class="climate-temp"><span>Target</span><b>'+esc(this._climateDraft?.[car.id]??climateTemp)+esc(tempUnit)+'</b><input data-car="'+i+'" data-act="climate-temp" data-unit="'+escAttr(tempUnit)+'" aria-label="Target cabin temperature" type="range" min="'+esc(climateMin)+'" max="'+esc(climateMax)+'" step="'+esc(climateStep)+'" value="'+esc(this._climateDraft?.[car.id]??climateTemp)+'"></label><button data-car="'+i+'" data-act="climate-temp-apply"'+(this._busy?.has(p.climate.id)?' disabled aria-busy="true"':'')+'>Apply</button>':"")+
           ((climateAttrs.hvac_modes||[]).length>1?'<button data-car="'+i+'" data-act="climate-mode"'+(this._busy?.has(p.climate.id)?' disabled':'')+'>Mode: '+esc(titleState(climateAttrs.hvac_mode||"-"))+'</button>':"")+
           ((climateAttrs.fan_modes||[]).length>1?'<button data-car="'+i+'" data-act="climate-fan"'+(this._busy?.has(p.climate.id)?' disabled':'')+'>Fan: '+esc(titleState(climateAttrs.fan_mode||"-"))+'</button>':"")+
