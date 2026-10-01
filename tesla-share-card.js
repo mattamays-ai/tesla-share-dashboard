@@ -15,7 +15,13 @@ async function loadTeslaRegistry(hass) {
     hass.callWS({ type: "config/entity_registry/list_for_display" }),
     hass.callWS({ type: "config/device_registry/list" }),
   ]);
-  const entities = (entityResult?.entities || [])
+  const rawEntities = Array.isArray(entityResult)
+    ? entityResult
+    : (entityResult?.entities || entityResult?.result?.entities || []);
+  const rawDevices = Array.isArray(deviceResult)
+    ? deviceResult
+    : (deviceResult?.devices || deviceResult?.result?.devices || []);
+  const entities = rawEntities
     .map((meta) => ({
       id: meta.ei,
       platform: meta.pl,
@@ -25,7 +31,7 @@ async function loadTeslaRegistry(hass) {
     }))
     .filter((e) => e.id && e.state && PLATFORMS.has(e.platform));
   const devices = {};
-  for (const device of Array.isArray(deviceResult) ? deviceResult : []) {
+  for (const device of rawDevices) {
     if (device?.id) devices[device.id] = device;
   }
   return { entities, devices };
