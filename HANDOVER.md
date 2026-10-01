@@ -6,7 +6,7 @@ Last updated: October 1, 2026
 
 - Repository: mattamays-ai/tesla-share-dashboard
 - Default branch: main
-- Current main commit: 911221a6ea046554250c598d11416dd3a3c3807e ("Fix render crash and entity-matching regexes")
+- Current main commit: dc2552f38e55248423f47bc608cfe87eda8d98c9; this release also carries the October 1 follow-up pass described in section 2 (same commit as this document).
 - Main is authoritative. Do not merge the older v2-tesla-app-ui or v3-vehicle-command-center branches back into main unless explicitly required.
 - HACS dashboard plugin, single-file browser-native custom element, no build step.
 - Primary source: tesla-share-card.js
@@ -23,9 +23,21 @@ A follow-up defect-fix pass landed in commit 911221a: it fixed a temporal-dead-z
 
 The current source was fetched from main immediately before this handover synchronization. The current tesla-share-card.js blob SHA is:
 
-b86d4fb5e1a16992120172f77504821b888d6786
+475dd88689523b45c64c4846228f8fa2eb9fdb44
 
-There is no CI workflow currently associated with this release. Do not claim a new browser-suite pass unless it has actually been run. The 911221a fixes were verified with local Node harnesses (render, discovery fallback, adversarial cases) and the README parser check; a fresh browser-suite run on the current commit has NOT been performed.
+A second October 1 follow-up pass (same commit as this document) added two behavior corrections from a fresh contract audit: vehicle_images URLs are now scheme-validated (only http(s) is used; other schemes fall back to official artwork), and the numeric state helper no longer coerces a missing or unknown entity value into 0 (a battery, charge limit, or amps value with no source entity renders as a dash instead of a fabricated "0", which previously could also trigger the amber low-battery treatment on a car with no battery entity). A real-browser render of the current source was performed against a local mocked-Home-Assistant fixture (scratch, not committed); discovery, remote artwork, temperature units, and controls rendered correctly.
+
+A third October 1 pass (same commit as this document) reworked climate interaction, paint recoloring, and mode imagery, driven by user feedback:
+
+- the Climate quick-control button now opens the climate/interior view (seat cabin, chips, controls) and scrolls it into view instead of toggling HVAC; explicit HVAC On/Off lives inside that view
+- a climate preset-mode selector cycles preset_modes via climate.set_preset_mode (tesla_custom exposes none/dog/camp/keep_on/defrost), alongside the existing hvac_mode and fan_mode cycling
+- when a preset mode is active, the interior view shows mode imagery: a mode_images config URL when one matches the preset name, otherwise an inline SVG fallback (dog, camp, defrost, keep)
+- remote artwork is recolored to the selected paint via a duotone CSS filter chain computed from the paint hex (grayscale, sepia, saturate, hue-rotate, brightness derived from the color's HSL), replacing the four hard-coded filter branches; luminance detail of the photo is preserved
+- a command that is accepted but produces no state change now reports "Vehicle asleep \u00b7 wake it and retry" when the vehicle's online/asleep entities indicate the car is not awake, instead of the generic pending notice
+
+This pass was verified with the three local Node harnesses, an 8-case behavior proof suite (climate-open, HVAC power dispatch, preset cycling, mode image override and fallback, hex-derived paint filter, asleep hint), and a real-browser render of the current source against a mocked-Home-Assistant fixture (scratch, not committed).
+
+There is no CI workflow currently associated with this release. Do not claim a new browser-suite pass unless it has actually been run. The 911221a fixes were verified with local Node harnesses (render, discovery fallback, adversarial cases) and the README parser check; the current source has additionally had a real-browser render check (see above), but the historical full browser-suite has not been rerun on it.
 
 ## 3. Card contract
 
@@ -46,7 +58,8 @@ Configuration behavior:
 - history_days is clamped to 1-30 days.
 - history_ttl_ms defaults to 300000 ms and is clamped to 60000-900000 ms.
 - colors provides per-vehicle paint selection.
-- vehicle_images can provide model-specific image URLs.
+- vehicle_images provides model-specific image URLs. Only http(s) URLs are used; any other scheme is ignored and discovery falls back to official artwork.
+- mode_images provides per-preset imagery for the climate/interior view (keys match preset names such as dog, camp, keep_on, defrost; only http(s) URLs are used, and a broken or non-matching image falls back to the inline SVG icon).
 - Vehicle configuration is persisted by device identity where supported.
 
 ## 4. Architecture
@@ -75,16 +88,17 @@ Official Tesla CDN artwork is used for supported Model 3, Model Y, Model S, and 
 
 Current paint treatment is intentionally dependency-light:
 
-- successful remote artwork is displayed with CSS filter-based paint treatment
+- remote artwork is displayed with a duotone CSS filter chain computed from the selected paint hex in _paintFilter(): grayscale(1) sepia(1) saturate() hue-rotate() brightness(), with the rotate/saturate/brightness values derived from the paint color's HSL (sepia's base hue is rotated onto the paint hue; saturation and brightness scale from the color's saturation and lightness)
+- the photo's luminance detail (shadows, highlights, glass) is preserved through the grayscale base, so the recolored car keeps photographic depth while taking on the selected hue
 - a lightweight color tint is layered over the vehicle image
 - the previous cross-origin CSS mask-image dependency has been removed
-- the built-in SVG remains available as a fallback
+- the built-in SVG remains available as a fallback and is painted directly with the configured color
 - remote images use eager loading, async decoding, and no-referrer policy
 - no external SVG <image> dependency is used
 
-Do not describe the current implementation as using a cross-origin masked paint overlay. That was the previous implementation.
+Do not describe the current implementation as using a cross-origin masked paint overlay, and do not describe the filter as a fixed per-color lookup table; the filter is computed from the paint hex.
 
-The visual result is an approximation of the configured paint color because CSS filtering cannot reproduce an exact automotive paint formula.
+The visual result reproduces the configured paint hue at the pixel-filter level, but it is still not an automotive paint formula match: glass, wheels, and trim share the recolor because the CDN artwork has no body-only mask.
 
 ## 6. State semantics
 
@@ -111,6 +125,7 @@ Panels:
 
 - doors, windows, frunk, trunk, and charge-port state reflect discovered entities
 - open state is informational emphasis, not an invented fault
+- known limitation: after an integration restart with the vehicle asleep, tesla_custom can serve placeholder panel states (for example a trunk reported "open" that is not real). The card renders what the entity reports and cannot distinguish a placeholder from a genuine state client-side; commands dispatched from a placeholder state may act on stale data
 
 TPMS:
 
@@ -132,7 +147,7 @@ All commands are capability-driven and dispatched through the discovered entity 
 Supported paths include:
 
 - lock/unlock
-- climate
+- climate (set_temperature, set_hvac_mode, set_fan_mode, set_preset_mode, turn_on/turn_off)
 - cover
 - button
 - switch
@@ -142,6 +157,8 @@ Supported paths include:
 - horn/flash/remote start where exposed
 - frunk/trunk where exposed
 - charging limit/current controls where writable entities exist
+
+The Climate quick-control button opens the climate/interior view (it does not dispatch a command); HVAC on/off is an explicit button inside that view. The preset selector cycles the climate entity's preset_modes via climate.set_preset_mode and only renders when preset_modes is exposed. When a preset mode is active, the interior view shows mode imagery from the mode_images config key, falling back to an inline SVG icon if no matching or working image is configured.
 
 High-impact actions use in-card confirmation:
 
@@ -236,17 +253,7 @@ The production JS should remain ASCII-only. Use HTML entities for visible non-AS
 
 ## 11. Local preview and verification
 
-The local preview fixture is intentionally not part of the release unless explicitly adopted.
-
-Local development:
-
-    python3 -m http.server 8631
-
-Then open:
-
-    http://localhost:8631/preview.html?v=<incrementing-number>
-
-The preview mocks Home Assistant state, registry, Recorder history, and service calls. Keep the registry mock and state mock synchronized because discovery is registry-driven.
+There is no committed preview fixture in this repository. A historical handover referenced a preview.html served on port 8631; that file does not exist in git history and the reference was stale. Browser-level verification of the current source was done with a local scratch fixture (mocked Home Assistant state, registry, and service calls) that is deliberately not committed; recreate one locally if browser verification is needed again.
 
 Required release checks:
 
@@ -297,15 +304,19 @@ Before release:
 
 This handover is synchronized to the October 1, 2026 main state represented by:
 
-911221a6ea046554250c598d11416dd3a3c3807e
+dc2552f38e55248423f47bc608cfe87eda8d98c9
 
 The previous handover receipt pointing to 23fe5ad5792283d456874c9b5992ea228297e89f is historical and no longer describes the current main state. (The 23fe5ad receipt itself had replaced 62a84a85a5b9d67f2da93ec1338dacdd78c141e6.)
 
 Key documentation corrections made here:
 
-- current main commit and card blob SHA are updated to 911221a / b86d4fb
+- current main commit and card blob SHA are updated (main dc2552f; card blob 475dd88 after the third October 1 pass)
 - the defect-fix pass (render crash, regex repairs, color guard) is documented in section 2
-- command acknowledgement wording matches _service()
+- the second October 1 pass (vehicle_images scheme validation, numeric-state null handling) is documented in section 2
+- the third October 1 pass (climate view interaction, preset modes, mode imagery, duotone paint recolor, asleep hint) is documented in sections 2, 3, 5, and 7
+- section 11 no longer references a committed preview fixture; none exists in git history
+- a known placeholder-state limitation for tesla_custom restarts is documented in section 6
+- command acknowledgement wording matches _service() including the vehicle-asleep hint
 - paint treatment wording matches the current CSS-filter implementation
 - TPMS/native-unit behavior is documented
 - Recorder route and estimated-trip terminology matches the current UI
