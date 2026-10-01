@@ -9,20 +9,30 @@ function esc(value) {
     .replace(/"/g, "&" + "quot;");
 }
 
-function listTesla(hass) {
-  const reg = hass.entities || {};
-  const out = [];
-  for (const [id, meta] of Object.entries(reg)) {
-    if (!meta || meta.hidden || !PLATFORMS.has(meta.platform)) continue;
-    const state = hass.states?.[id];
-    if (!state) continue;
-    out.push({ id, platform: meta.platform, device_id: meta.device_id || null, state });
+async function loadTeslaRegistry(hass) {
+  if (!hass?.callWS) return { entities: [], devices: {} };
+  const [entityResult, deviceResult] = await Promise.all([
+    hass.callWS({ type: "config/entity_registry/list_for_display" }),
+    hass.callWS({ type: "config/device_registry/list" }),
+  ]);
+  const entities = (entityResult?.entities || [])
+    .map((meta) => ({
+      id: meta.ei,
+      platform: meta.pl,
+      device_id: meta.di || null,
+      name: meta.en || "",
+      state: hass.states?.[meta.ei],
+    }))
+    .filter((e) => e.id && e.state && PLATFORMS.has(e.platform));
+  const devices = {};
+  for (const device of Array.isArray(deviceResult) ? deviceResult : []) {
+    if (device?.id) devices[device.id] = device;
   }
-  return out;
+  return { entities, devices };
 }
 
-function deviceName(hass, deviceId) {
-  const dev = deviceId && hass.devices ? hass.devices[deviceId] : null;
+function deviceName(registry, deviceId) {
+  const dev = deviceId && registry?.devices?.[deviceId];
   return (dev && (dev.name_by_user || dev.name)) || "Tesla";
 }
 
@@ -92,8 +102,8 @@ function num(hass, ent) {
 }
 
 
-function vehicleModel(hass, deviceId, entities) {
-  const d = hass.devices?.[deviceId] || {};
+function vehicleModel(hass, registry, deviceId, entities) {
+  const d = registry?.devices?.[deviceId] || {};
   const text = [d.model,d.name,d.name_by_user,...entities.map(e=>e.state?.attributes?.model)].filter(Boolean).join(" ");
   return ["Model 3","Model Y","Model S","Model X","Cybertruck","Roadster"].find(m=>new RegExp("\\b"+m.replace(" ","\\s+")+"\\b","i").test(text)) || "Tesla";
 }
@@ -109,7 +119,35 @@ class TeslaShareCard extends HTMLElement {
   setConfig(config){this._config=config||{}}
   getCardSize(){return 12}
   connectedCallback(){if(!this.shadowRoot)this.attachShadow({mode:"open"});this._render()}
-  set hass(h){this._hass=h;this._render();this._historyLoad()}
+  set hass(h){
+    this._hass=h;
+    if(!this._registryReady)this._loadRegistry();
+    else this._syncRegistryStates();
+    this._render();
+    this._historyLoad();
+  }
+  async _loadRegistry(){
+    if(!this._hass?.callWS||this._registryLoading)return;
+    this._registryLoading=true;
+    try{
+      this._registry=await loadTeslaRegistry(this._hass);
+      this._registryReady=true;
+      this._syncRegistryStates();
+      this._render();
+      this._historyKey="";
+      await this._historyLoad();
+    }catch(e){
+      this._registry={entities:[],devices:{}};
+      this._registryReady=true;
+      this._render();
+    }finally{
+      this._registryLoading=false;
+    }
+  }
+  _syncRegistryStates(){
+    if(!this._registry?.entities||!this._hass?.states)return;
+    for(const e of this._registry.entities)e.state=this._hass.states[e.id];
+  }
   _service(ent,service,data={}){
     if(!ent||!this._hass)return;
     const d=ent.id.split(".")[0];
@@ -155,13 +193,28 @@ class TeslaShareCard extends HTMLElement {
   _btn(i,key,label,act="toggle",on=false){return '<button class="ctrl '+(on?"on":"")+'" data-car="'+i+'" data-key="'+key+'" data-act="'+act+'"><span>'+esc({lock:"🔒",climate:"◌",sentry:"◉",port:"ϟ",frunk:"▱",trunk:"▱",windows:"▥",wake:"↻",refresh:"↻",flash:"✦",horn:"♬",start:"▶"}[key]||"•")+'</span><small>'+esc(label)+'</small></button>'}
   async _historyLoad(){
     if(this._historyLoading||!this._hass?.callWS||!this._cars?.length)return;
-    const ids=this._cars.map(c=>c.picked.tracker?.id).filter(Boolean);if(!ids.length)return;
+    const ids=this._cars.map(c=>c.picked.tracker?.id).filter(Boolean).sort();
+    if(!ids.length)return;
+    const days=Math.max(1,Math.min(30,+this._config?.history_days||7));
+    const key=days+"|"+ids.join(",");
+    if(this._historyKey===key)return;
     this._historyLoading=true;
+    this._historyKey=key;
     try{
-      const days=Math.max(1,Math.min(30,+this._config?.history_days||7));
-      const rows=await this._hass.callWS({type:"history/history_during_period",start_time:new Date(Date.now()-days*86400000).toISOString(),end_time:new Date().toISOString(),entity_ids:ids,minimal_response:false,significant_changes_only:false});
-      this._history=rows||{};this._render();
-    }catch(e){}finally{this._historyLoading=false}
+      const end=new Date(),start=new Date(end.getTime()-days*86400000);
+      const rows=await this._hass.callWS({
+        type:"history/history_during_period",
+        start_time:start.toISOString(),
+        end_time:end.toISOString(),
+        entity_ids:ids,
+        minimal_response:false,
+        significant_changes_only:false
+      });
+      this._history=rows||{};
+      this._render();
+    }catch(e){
+      this._historyKey="";
+    }finally{this._historyLoading=false}
   }
   _route(car){
     const rows=this._history?.[car.picked.tracker?.id]||[],pts=rows.map(x=>{const a=x.attributes||{},lat=+a.latitude,lon=+a.longitude;return Number.isFinite(lat)&&Number.isFinite(lon)?{lat,lon}:null}).filter(Boolean);
@@ -186,10 +239,24 @@ class TeslaShareCard extends HTMLElement {
   }
   _render(){
     if(!this.shadowRoot||!this._hass)return;
-    const h=this._hass,all=listTesla(h),by=new Map();
-    for(const e of all){const k=e.device_id||e.id;if(!by.has(k))by.set(k,[]);by.get(k).push(e)}
-    this._cars=[...by].map(([id,es])=>({id,device_id:id,name:deviceName(h,id),model:vehicleModel(h,id,es),picked:pick(es)}));
-    const body=this._cars.length?this._cars.map((c,i)=>this._carHtml(c,i,h)).join(""):'<article class="car empty">No Tesla vehicles detected. Add Tesla Custom or Tesla Fleet and reload.</article>';
+    const h=this._hass,all=this._registry?.entities||[],by=new Map();
+    for(const e of all){
+      const state=h.states?.[e.id];
+      if(!state)continue;
+      e.state=state;
+      const k=e.device_id||e.id;
+      if(!by.has(k))by.set(k,[]);
+      by.get(k).push(e);
+    }
+    this._cars=[...by].map(([id,es])=>({
+      id,device_id:id,
+      name:deviceName(this._registry,id),
+      model:vehicleModel(h,this._registry,id,es),
+      picked:pick(es)
+    }));
+    const body=this._registry
+      ? (this._cars.length?this._cars.map((c,i)=>this._carHtml(c,i,h)).join(""):'<article class="car empty">No Tesla vehicles detected. Add Tesla Custom or Tesla Fleet and reload.</article>')
+      : '<article class="car empty">Loading Tesla vehicles…</article>';
     this.shadowRoot.innerHTML='<style>:host{display:block}.wrap{background:#000;color:#fff;border-radius:24px;padding:4px;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;letter-spacing:-.02em}.car{background:#181818;border:1px solid #292929;border-radius:22px;margin:8px;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,.3)}header{display:flex;justify-content:space-between;align-items:center;padding:18px 18px 0}header b{font-size:20px;font-weight:600}header small{display:block;color:#888;font-size:11px;margin-top:2px}.state{color:#aaa;font-size:12px}.state.charge{color:#3e6ae1}.visual{height:190px;padding:8px 18px 0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#292929,#181818 72%)}.car-svg{width:100%;height:180px;filter:drop-shadow(0 18px 15px rgba(0,0,0,.5))}.bolt{opacity:0}.charging .bolt{opacity:1;animation:pulse 1.1s infinite}.charging .charge{animation:pulse 1.1s infinite}@keyframes pulse{50%{opacity:.3}}.colors{display:flex;gap:9px;padding:0 18px 12px}.swatch{width:17px;height:17px;border-radius:50%;border:1px solid #444;padding:0}.swatch.on{outline:2px solid #3e6ae1;outline-offset:2px}.picker{width:20px;height:20px;border:0;background:none}.battery{display:flex;align-items:end;justify-content:space-between;margin:0 18px 7px}.battery strong{font-size:64px;line-height:.85;letter-spacing:-.06em}.battery strong small{font-size:20px;color:#888}.battery span{font-size:13px;color:#aaa}.bar{height:5px;background:#333;border-radius:99px;overflow:hidden;margin:0 18px}.bar i{display:block;height:100%;background:#fff}.meta{display:flex;gap:16px;flex-wrap:wrap;padding:11px 18px 15px;color:#999;font-size:12px}.meta b{color:#fff}section,.climate{border-top:1px solid #292929;padding:14px 18px}.title{display:flex;justify-content:space-between;margin-bottom:9px;font-size:13px}.title small{color:#777;font-size:10px}.address{font-size:14px}.states div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #242424;font-size:12px;color:#999}.states b{color:#ddd}.states b.alert{color:#e82127}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.ctrl{min-height:60px;background:#232323;color:#fff;border:0;border-radius:13px;font-size:10px}.ctrl.on{background:#252d3a}.ctrl span{display:block;font-size:17px;margin-bottom:6px}.climate{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;color:#888;font-size:10px}.climate b,.chargegrid b{display:block;color:#fff;font-size:12px;margin-top:4px}.chargegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.chargegrid span{background:#232323;border-radius:11px;padding:10px;color:#888;font-size:10px}label{display:grid;grid-template-columns:1fr auto;gap:5px;color:#888;font-size:11px;margin-top:12px}label b{color:#fff}label input{grid-column:1/-1;width:100%;accent-color:#e82127}.route{width:100%;height:170px;background:#101010;border-radius:14px}.map-empty{background:#101010;color:#666;border-radius:14px;padding:22px;text-align:center;font-size:11px}.empty{padding:20px;color:#888}</style><div class="wrap">'+body+'</div>';
     const w=this.shadowRoot.querySelector(".wrap");w.onclick=e=>this._onClick(e);w.onchange=e=>this._onChange(e);
   }
