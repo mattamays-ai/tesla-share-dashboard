@@ -167,7 +167,9 @@ class TeslaShareCard extends HTMLElement {
     try { return localStorage.getItem("tesla-share-color:" + key) || this._config?.color || "#f4f4f4"; } catch (e) { return this._config?.color || "#f4f4f4"; }
   }
 
-  _carSvg(charging, windowsOpen, color) {
+  _carSvg(car, charging, windowsOpen, color) {
+    const image = this._config?.images?.[car.name] || this._config?.images?.[car.id] || this._config?.images?.[car.model];
+    if (image) return `<div class="vehicle-photo"><img src="${esc(image)}" alt="${esc(car.name)}"></div>`;
     const hot = /charg/i.test(charging || "") && !/complete|idle|disconnected|stopped/i.test(charging || "");
     const paint = color || "#f4f4f4";
     const glass = windowsOpen ? "none" : "#1a1a1c";
@@ -189,7 +191,7 @@ class TeslaShareCard extends HTMLElement {
   _swatches(car, index) {
     const colors = ["#f4f4f4", "#171a20", "#e82127", "#3e6ae1", "#9a9a9e", "#c4a574"];
     const current = this._color(car);
-    return `<div class="colors">${colors.map((c) => `<button class="swatch${c.toLowerCase() === String(current).toLowerCase() ? " on" : ""}" data-car="${index}" data-act="color" data-color="${c}" style="background:${c}"></button>`).join("")}<input class="picker" data-act="color" type="color" value="${/^#([0-9a-f]{6})$/i.test(current) ? current : "#f4f4f4"}"></div>`;
+    return `<div class="colors">${colors.map((c) => `<button class="swatch${c.toLowerCase() === String(current).toLowerCase() ? " on" : ""}" data-car="${index}" data-act="color" data-color="${c}" style="background:${c}"></button>`).join("")}<input class="picker" data-car="${index}" data-act="color" type="color" value="${/^#([0-9a-f]{6})$/i.test(current) ? current : "#f4f4f4"}"></div>`;
   }
 
   _ctrl(carIndex, key, label, act, on) {
@@ -236,7 +238,7 @@ class TeslaShareCard extends HTMLElement {
     return `
       <article class="car">
         <header><b>${esc(car.name)}</b><span>${esc(charging)}</span></header>
-        <div class="visual">${this._carSvg(charging, stateOf(hass, p.windows) === "open", this._color(car))}</div>
+        <div class="visual">${this._carSvg(car, charging, stateOf(hass, p.windows) === "open", this._color(car))}</div>
         ${this._swatches(car, index)}
         <div class="soc">${soc == null ? "—" : soc}<small>%</small></div>
         <div class="bar"><i style="width:${width}%"></i></div>
