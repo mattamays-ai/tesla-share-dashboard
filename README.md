@@ -34,13 +34,52 @@ Unsupported capabilities are omitted rather than replaced with fake controls.
 
 ### HACS
 
-Install **Tesla Share** through HACS as a dashboard plugin.
+**[Install Tesla Share from this GitHub repository](https://github.com/mattamays-ai/tesla-share-dashboard)**
 
-Then add the card to a Home Assistant dashboard:
+1. Open the repository in GitHub.
+2. In Home Assistant, open **HACS → Dashboard**.
+3. Search for **Tesla Share** and select **Tesla Share**.
+4. Select **Download**.
+5. Refresh the Home Assistant frontend if prompted.
+6. Add the card to a dashboard:
 
 ```yaml
 type: custom:tesla-share-card
 ```
+
+**HACS direct repository:**  
+https://github.com/mattamays-ai/tesla-share-dashboard
+
+If Tesla Share is not yet visible in your HACS catalog, add the GitHub repository as a **custom repository** with category **Dashboard**, then install it from HACS.
+
+### Manual Home Assistant install
+
+**[Open the JavaScript file on GitHub](https://github.com/mattamays-ai/tesla-share-dashboard/blob/main/tesla-share-card.js)**
+
+1. Download `tesla-share-card.js` from the GitHub repository.
+2. Copy it to:
+   `/config/www/tesla-share-card.js`
+3. In Home Assistant, go to **Settings → Dashboards → Resources**.
+4. Add:
+
+```yaml
+url: /local/tesla-share-card.js
+type: module
+```
+
+5. Refresh the Home Assistant frontend.
+6. Add:
+
+```yaml
+type: custom:tesla-share-card
+```
+
+### GitHub files
+
+- **[Repository](https://github.com/mattamays-ai/tesla-share-dashboard)**
+- **[README](https://github.com/mattamays-ai/tesla-share-dashboard/blob/main/README.md)**
+- **[Tesla Share card](https://github.com/mattamays-ai/tesla-share-dashboard/blob/main/tesla-share-card.js)**
+- **[HACS configuration](https://github.com/mattamays-ai/tesla-share-dashboard/blob/main/hacs.json)**
 
 ### Requirements
 
