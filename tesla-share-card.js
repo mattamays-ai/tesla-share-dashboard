@@ -122,7 +122,15 @@ class TeslaShareCard extends HTMLElement {
 
   _onClick(ev) {
     const btn = ev.target.closest("[data-act]");
-    if (!btn || !this._cars) return;
+    if (!btn) return;
+    if (btn.dataset.act === "color") {
+      const color = btn.dataset.color || btn.value;
+      try { localStorage.setItem("tesla-share-color", color); } catch (e) {}
+      this._config = { ...(this._config || {}), color };
+      this._render();
+      return;
+    }
+    if (!this._cars) return;
     const car = this._cars[Number(btn.dataset.car)];
     const ent = car?.picked?.[btn.dataset.key];
     const act = btn.dataset.act;
@@ -135,6 +143,12 @@ class TeslaShareCard extends HTMLElement {
 
   _onInput(ev) {
     const el = ev.target;
+    if (el.dataset.act === "color") {
+      try { localStorage.setItem("tesla-share-color", el.value); } catch (e) {}
+      this._config = { ...(this._config || {}), color: el.value };
+      this._render();
+      return;
+    }
     if (!el.dataset.key || !this._cars) return;
     const car = this._cars[Number(el.dataset.car)];
     const ent = car?.picked?.[el.dataset.key];
@@ -142,18 +156,35 @@ class TeslaShareCard extends HTMLElement {
     this._call("number", "set_value", ent, { value: Number(el.value) });
   }
 
-  _carSvg(charging) {
+  _color() {
+    const fromConfig = this._config && this._config.color;
+    if (fromConfig) return fromConfig;
+    try { return localStorage.getItem("tesla-share-color") || "#f4f4f4"; } catch (e) { return "#f4f4f4"; }
+  }
+
+  _carSvg(charging, windowsOpen, color) {
     const hot = /charg/i.test(charging || "") && !/complete|idle|disconnected|stopped/i.test(charging || "");
-    return `<svg viewBox="0 0 640 220" class="car-svg${hot ? " charging" : ""}" aria-hidden="true">
-      <path d="M78 148c18-46 62-78 118-86 28-4 46-4 74 2 22 5 40 6 70 6 48 0 86 10 118 32 24 16 40 28 62 28 10 0 18-2 28-6l14 10c-16 10-34 14-52 12-22-2-36-12-54-24-28-18-58-28-100-30-34-2-52-2-78 4-42 8-78 34-98 72l-8 16H78z" fill="#f4f4f4"/>
-      <path d="M168 78c22-8 48-10 78-8 18 1 34 2 52 6v28c-22-6-46-8-70-6-20 2-40 8-58 18l-2-38z" fill="#1a1a1c"/>
-      <path d="M302 78c16 2 34 6 52 14 10 4 16 8 22 12v22c-14-8-32-14-52-16-12-1-22 0-30 2V78h8z" fill="#141416"/>
-      <circle cx="196" cy="156" r="28" fill="#0a0a0a" stroke="#f4f4f4" stroke-width="8"/>
+    const paint = color || "#f4f4f4";
+    const glass = windowsOpen ? "none" : "#1a1a1c";
+    const glassStroke = windowsOpen ? paint : "none";
+    return `<svg viewBox="0 0 640 220" class="car-svg${hot ? " charging" : ""}${windowsOpen ? " windows" : ""}" aria-hidden="true">
+      <path d="M78 148c18-46 62-78 118-86 28-4 46-4 74 2 22 5 40 6 70 6 48 0 86 10 118 32 24 16 40 28 62 28 10 0 18-2 28-6l14 10c-16 10-34 14-52 12-22-2-36-12-54-24-28-18-58-28-100-30-34-2-52-2-78 4-42 8-78 34-98 72l-8 16H78z" fill="${paint}"/>
+      <path d="M168 78c22-8 48-10 78-8 18 1 34 2 52 6v28c-22-6-46-8-70-6-20 2-40 8-58 18l-2-38z" fill="${glass}" stroke="${glassStroke}" stroke-width="3"/>
+      <path d="M302 78c16 2 34 6 52 14 10 4 16 8 22 12v22c-14-8-32-14-52-16-12-1-22 0-30 2V78h8z" fill="${glass}" stroke="${glassStroke}" stroke-width="3"/>
+      ${windowsOpen ? `<path d="M186 96h78M318 96h48" stroke="${paint}" stroke-width="3" stroke-linecap="round"/>` : ""}
+      <circle cx="196" cy="156" r="28" fill="#0a0a0a" stroke="${paint}" stroke-width="8"/>
       <circle cx="196" cy="156" r="10" fill="#3a3a3c"/>
-      <circle cx="430" cy="156" r="28" fill="#0a0a0a" stroke="#f4f4f4" stroke-width="8"/>
+      <circle cx="430" cy="156" r="28" fill="#0a0a0a" stroke="${paint}" stroke-width="8"/>
       <circle cx="430" cy="156" r="10" fill="#3a3a3c"/>
+      <circle class="port" cx="118" cy="132" r="7" fill="#3e6ae1"/>
       <path class="bolt" d="M250 146h46l-10 16h28l-40 36 10-22h-26l12-30z" fill="#e82127"/>
     </svg>`;
+  }
+
+  _swatches() {
+    const colors = ["#f4f4f4", "#171a20", "#e82127", "#3e6ae1", "#9a9a9e", "#c4a574"];
+    const current = this._color();
+    return `<div class="colors">${colors.map((c) => `<button class="swatch${c.toLowerCase() === String(current).toLowerCase() ? " on" : ""}" data-act="color" data-color="${c}" style="background:${c}"></button>`).join("")}<input class="picker" data-act="color" type="color" value="${/^#([0-9a-f]{6})$/i.test(current) ? current : "#f4f4f4"}"></div>`;
   }
 
   _ctrl(carIndex, key, label, act, on) {
@@ -200,7 +231,8 @@ class TeslaShareCard extends HTMLElement {
     return `
       <article class="car">
         <header><b>${esc(car.name)}</b><span>${esc(charging)}</span></header>
-        <div class="visual">${this._carSvg(charging)}</div>
+        <div class="visual">${this._carSvg(charging, stateOf(hass, p.windows) === "open", this._color())}</div>
+        ${this._swatches()}
         <div class="soc">${soc == null ? "—" : soc}<small>%</small></div>
         <div class="bar"><i style="width:${width}%"></i></div>
         <div class="meta">
@@ -257,8 +289,14 @@ class TeslaShareCard extends HTMLElement {
         header span, .meta { color: #9a9a9e; font-size: 13px; }
         .visual { margin: 6px 0 2px; }
         .car-svg { width: 100%; height: 92px; display: block; }
-        .car-svg .bolt { opacity: 0; }
-        .car-svg.charging .bolt { opacity: 1; }
+        .car-svg .bolt, .car-svg .port { opacity: 0; }
+        .car-svg.charging .bolt, .car-svg.charging .port { opacity: 1; }
+        .car-svg.charging .bolt { animation: pulse 1.1s ease-in-out infinite; }
+        @keyframes pulse { 50% { opacity: .35; } }
+        .colors { display: flex; gap: 8px; align-items: center; margin: 2px 0 8px; }
+        .swatch { width: 18px; height: 18px; border-radius: 99px; border: 1px solid #3a3a3c; padding: 0; cursor: pointer; }
+        .swatch.on { outline: 2px solid #3e6ae1; outline-offset: 2px; }
+        .picker { width: 22px; height: 22px; border: 0; background: none; padding: 0; }
         .soc { font-size: 64px; line-height: .9; font-weight: 560; margin: 4px 0 6px; }
         .soc small { font-size: 22px; color: #9a9a9e; }
         .bar { height: 6px; background: #2c2c2e; border-radius: 99px; overflow: hidden; }
