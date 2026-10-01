@@ -399,9 +399,16 @@ class TeslaShareCard extends HTMLElement {
     return "saturate(.72) brightness(1.08)";
   }
   _onClick(e){
-    const b=e.target.closest("[data-act]");if(!b||b.disabled||b.getAttribute("aria-disabled")==="true")return;
+    const path=typeof e.composedPath==="function"?e.composedPath():[];
+    const b=(path.find(n=>n?.nodeType===1&&n.hasAttribute?.("data-act"))||e.target?.closest?.("[data-act]"));
+    if(!b||b.disabled||b.getAttribute("aria-disabled")==="true")return;
     if(b.dataset.act==="dashboard-view"){
-      if(String(this._config?.mode||"").toLowerCase()==="dashboard" && b.dataset.view){this._dashboardView=b.dataset.view;this._render(true)}
+      if(String(this._config?.mode||"").toLowerCase()==="dashboard" && b.dataset.view){
+        e.preventDefault?.();
+        this._dashboardView=String(b.dataset.view);
+        this._renderSignature="";
+        this._render(true);
+      }
       return;
     }
     if(b.dataset.act==="confirm"){
