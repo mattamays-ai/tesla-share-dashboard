@@ -170,18 +170,35 @@ class TeslaShareCard extends HTMLElement {
     if(!this._registry?.entities||!this._hass?.states)return;
     for(const e of this._registry.entities)e.state=this._hass.states[e.id];
   }
-  _service(ent,service,data={}){
-    if(!ent||!this._hass)return;
+  async _service(ent,service,data={}){
+    if(!ent||!this._hass)return false;
     const d=ent.id.split(".")[0];
-    this._hass.callService(d,service,{entity_id:ent.id,...data});
+    this._busy=this._busy||new Set();this._busy.add(ent.id);this._render();
+    try{await this._hass.callService(d,service,{entity_id:ent.id,...data});this._notice="Command sent";return true}
+    catch(e){this._notice="Command failed";return false}
+    finally{this._busy.delete(ent.id);this._render();clearTimeout(this._noticeTimer);this._noticeTimer=setTimeout(()=>{this._notice="";this._render()},3500)}
   }
-  _action(ent,kind){
+  async _action(ent,kind){
     if(!ent)return;
-    const d=ent.id.split(".")[0], s=stateOf(this._hass,ent);
+    const d=ent.id.split(".")[0],s=stateOf(this._hass,ent);
     if(kind==="toggle"){
       const service=d==="lock"?(s==="locked"?"unlock":"lock"):d==="switch"?(s==="on"?"turn_off":"turn_on"):d==="climate"?(s==="off"?"turn_on":"turn_off"):d==="cover"?(openState(s)?"close_cover":"open_cover"):null;
-      if(service)this._service(ent,service);
-    } else if(kind==="press") this._service(ent,"press");
+      if(service)await this._service(ent,service);
+    }else if(kind==="press")await this._service(ent,"press");
+  }
+  async _climateAction(car,action){
+    const ent=car.picked?.climate;if(!ent)return;
+    const a=this._hass.states?.[ent.id]?.attributes||{};
+    if(action==="temp"){
+      const value=Number(car.picked._tempDraft??a.temperature);
+      if(Number.isFinite(value))await this._service(ent,"set_temperature",{temperature:value});
+    }else if(action==="mode"){
+      const modes=a.hvac_modes||[],i=modes.indexOf(a.hvac_mode),next=modes[(i+1+modes.length)%Math.max(1,modes.length)];
+      if(next)await this._service(ent,"set_hvac_mode",{hvac_mode:next});
+    }else if(action==="fan"){
+      const modes=a.fan_modes||[],i=modes.indexOf(a.fan_mode),next=modes[(i+1+modes.length)%Math.max(1,modes.length)];
+      if(next)await this._service(ent,"set_fan_mode",{fan_mode:next});
+    }
   }
   _color(car){
     const key=car.device_id||car.id||car.name,cfg=this._config?.colors||{};
@@ -190,20 +207,25 @@ class TeslaShareCard extends HTMLElement {
   }
   _onClick(e){
     const b=e.target.closest("[data-act]");if(!b)return;
+    if(b.dataset.act==="confirm"){
+      if(this._confirm&&b.dataset.choice==="yes"){const c=this._confirm;this._confirm=null;this._render();this._action(c.ent,c.act)}
+      else{this._confirm=null;this._render()}
+      return;
+    }
     const car=this._cars?.[+b.dataset.car];if(!car)return;
     if(b.dataset.act==="color"){try{localStorage.setItem("tesla-share-color:"+(car.device_id||car.id||car.name),b.dataset.color||b.value)}catch{}this._render();return}
-    const key=b.dataset.key, ent=car.picked?.[key];
-    if(!ent)return;
-    const state=stateOf(this._hass,ent);
-    const risky=key==="horn"||key==="flash"||key==="start"||key==="frunk"||key==="trunk"||(key==="lock"&&state!=="locked");
-    if(risky && window.confirm && !window.confirm((key==="lock"&&state!=="locked")?"Unlock this Tesla?":"Send "+key+" command to "+car.name+"?"))return;
+    if(b.dataset.act==="climate"){this._climateAction(car,b.dataset.climate);return}
+    const key=b.dataset.key,ent=car.picked?.[key];if(!ent)return;
+    const state=stateOf(this._hass,ent),risky=key==="horn"||key==="flash"||key==="start"||key==="frunk"||key==="trunk"||(key==="lock"&&state!=="locked");
+    if(risky){this._confirm={car:car.name,key,ent,act:b.dataset.act};this._render();return}
     this._action(ent,b.dataset.act);
   }
   _onChange(e){
     const x=e.target,car=this._cars?.[+x.dataset.car];if(!car)return;
     if(x.dataset.act==="color"){try{localStorage.setItem("tesla-share-color:"+(car.device_id||car.id||car.name),x.value)}catch{}this._render();return}
+    if(x.dataset.act==="climate-temp"){car.picked._tempDraft=+x.value;this._render();return}
     const ent=car.picked?.[x.dataset.key];if(!ent)return;
-    const d=ent.id.split(".")[0];if(x.type==="range")this._service(ent,d==="number"?"set_value":"set_value",{value:+x.value});
+    if(x.type==="range")this._service(ent,"set_value",{value:+x.value});
   }
   _stockCar(car,charging,open){
     const paint=this._color(car),m=car.model||"Tesla";
@@ -326,10 +348,12 @@ class TeslaShareCard extends HTMLElement {
       model:vehicleModel(h,this._registry,id,es),
       picked:pick(es)
     }));
+    const notice=this._notice?'<div class="notice">'+esc(this._notice)+'</div>':"";
+    const confirm=this._confirm?'<div class="confirm"><div class="confirm-box"><b>Confirm '+esc(this._confirm.key)+' command</b><p>Send this command to '+esc(this._confirm.car)+'?</p><div class="confirm-actions"><button class="no" data-act="confirm" data-choice="no">Cancel</button><button class="yes" data-act="confirm" data-choice="yes">Confirm</button></div></div></div>':"";
     const body=this._registry
       ? (this._cars.length?this._cars.map((c,i)=>this._carHtml(c,i,h)).join(""):'<article class="car empty">No Tesla vehicles detected. Add Tesla Custom or Tesla Fleet and reload.</article>')
       : '<article class="car empty">Loading Tesla vehicles…</article>';
-    this.shadowRoot.innerHTML='<style>:host{display:block}.wrap{background:#000;color:#fff;border-radius:24px;padding:4px;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;letter-spacing:-.02em}.car{background:#181818;border:1px solid #292929;border-radius:22px;margin:8px;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,.3)}header{display:flex;justify-content:space-between;align-items:center;padding:18px 18px 0}header b{font-size:20px;font-weight:600}header small{display:block;color:#888;font-size:11px;margin-top:2px}.state{color:#aaa;font-size:12px}.state.charge{color:#3e6ae1}.visual{height:190px;padding:8px 18px 0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#292929,#181818 72%)}.car-svg{width:100%;height:180px;filter:drop-shadow(0 18px 15px rgba(0,0,0,.5));transition:transform .35s ease,filter .35s ease}.car-svg .body{transition:filter .35s ease}.car-svg.open{transform:translateY(-3px) scale(1.015)}.car-svg.cyber .body{stroke-opacity:.35}.bolt{opacity:0}.charging .bolt{opacity:1;animation:pulse 1.1s infinite}.charging .charge{animation:pulse 1.1s infinite}.charging .body{filter:drop-shadow(0 0 8px rgba(62,106,225,.35))}.door-open{stroke-dasharray:8 6;animation:door 1.4s linear infinite}@keyframes door{to{stroke-dashoffset:-28}}@keyframes pulse{50%{opacity:.3}}.colors{display:flex;gap:9px;padding:0 18px 12px}.swatch{width:17px;height:17px;border-radius:50%;border:1px solid #444;padding:0}.swatch.on{outline:2px solid #3e6ae1;outline-offset:2px}.picker{width:20px;height:20px;border:0;background:none}.battery{display:flex;align-items:end;justify-content:space-between;margin:0 18px 7px}.battery strong{font-size:64px;line-height:.85;letter-spacing:-.06em}.battery strong small{font-size:20px;color:#888}.battery span{font-size:13px;color:#aaa}.bar{height:5px;background:#333;border-radius:99px;overflow:hidden;margin:0 18px}.bar i{display:block;height:100%;background:#fff}.meta{display:flex;gap:16px;flex-wrap:wrap;padding:11px 18px 15px;color:#999;font-size:12px}.meta b{color:#fff}section,.climate{border-top:1px solid #292929;padding:14px 18px}.title{display:flex;justify-content:space-between;margin-bottom:9px;font-size:13px}.title small{color:#777;font-size:10px}.address{font-size:14px}.states div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #242424;font-size:12px;color:#999}.states b{color:#ddd}.states b.alert{color:#e82127}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.ctrl{min-height:60px;background:#232323;color:#fff;border:0;border-radius:13px;font-size:10px}.ctrl.on{background:#252d3a}.ctrl span{display:block;font-size:17px;margin-bottom:6px}.climate{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;color:#888;font-size:10px}.climate b,.chargegrid b{display:block;color:#fff;font-size:12px;margin-top:4px}.chargegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.chargegrid span{background:#232323;border-radius:11px;padding:10px;color:#888;font-size:10px}label{display:grid;grid-template-columns:1fr auto;gap:5px;color:#888;font-size:11px;margin-top:12px}label b{color:#fff}label input{grid-column:1/-1;width:100%;accent-color:#e82127}.route{width:100%;height:170px;background:#101010;border-radius:14px}.map-empty{background:#101010;color:#666;border-radius:14px;padding:22px;text-align:center;font-size:11px}.empty{padding:20px;color:#888}</style><div class="wrap">'+body+'</div>';
+    this.shadowRoot.innerHTML='<style>:host{display:block}.notice{position:sticky;top:8px;z-index:5;margin:8px;padding:10px 13px;border-radius:12px;background:#242424;color:#fff;font-size:12px}.confirm{position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:20;display:flex;align-items:center;justify-content:center;padding:24px}.confirm-box{max-width:360px;width:100%;background:#1d1d1d;border:1px solid #444;border-radius:18px;padding:20px;box-shadow:0 20px 60px #000}.confirm-box p{color:#aaa;font-size:12px;line-height:1.5}.confirm-actions{display:flex;gap:8px}.confirm-actions button{flex:1;padding:12px;border:0;border-radius:11px}.confirm-actions .yes{background:#e82127;color:#fff}.confirm-actions .no{background:#333;color:#fff}.climate-controls{grid-column:1/-1;display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:5px}.climate-controls button{background:#292929;color:#fff;border:0;border-radius:9px;padding:7px 10px;font-size:10px}.climate-controls input{flex:1;min-width:100px;accent-color:#e82127}.wrap{background:#000;color:#fff;border-radius:24px;padding:4px;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;letter-spacing:-.02em}.car{background:#181818;border:1px solid #292929;border-radius:22px;margin:8px;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,.3)}header{display:flex;justify-content:space-between;align-items:center;padding:18px 18px 0}header b{font-size:20px;font-weight:600}header small{display:block;color:#888;font-size:11px;margin-top:2px}.state{color:#aaa;font-size:12px}.state.charge{color:#3e6ae1}.visual{height:190px;padding:8px 18px 0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#292929,#181818 72%)}.car-svg{width:100%;height:180px;filter:drop-shadow(0 18px 15px rgba(0,0,0,.5));transition:transform .35s ease,filter .35s ease}.car-svg .body{transition:filter .35s ease}.car-svg.open{transform:translateY(-3px) scale(1.015)}.car-svg.cyber .body{stroke-opacity:.35}.bolt{opacity:0}.charging .bolt{opacity:1;animation:pulse 1.1s infinite}.charging .charge{animation:pulse 1.1s infinite}.charging .body{filter:drop-shadow(0 0 8px rgba(62,106,225,.35))}.door-open{stroke-dasharray:8 6;animation:door 1.4s linear infinite}@keyframes door{to{stroke-dashoffset:-28}}@keyframes pulse{50%{opacity:.3}}.colors{display:flex;gap:9px;padding:0 18px 12px}.swatch{width:17px;height:17px;border-radius:50%;border:1px solid #444;padding:0}.swatch.on{outline:2px solid #3e6ae1;outline-offset:2px}.picker{width:20px;height:20px;border:0;background:none}.battery{display:flex;align-items:end;justify-content:space-between;margin:0 18px 7px}.battery strong{font-size:64px;line-height:.85;letter-spacing:-.06em}.battery strong small{font-size:20px;color:#888}.battery span{font-size:13px;color:#aaa}.bar{height:5px;background:#333;border-radius:99px;overflow:hidden;margin:0 18px}.bar i{display:block;height:100%;background:#fff}.meta{display:flex;gap:16px;flex-wrap:wrap;padding:11px 18px 15px;color:#999;font-size:12px}.meta b{color:#fff}section,.climate{border-top:1px solid #292929;padding:14px 18px}.title{display:flex;justify-content:space-between;margin-bottom:9px;font-size:13px}.title small{color:#777;font-size:10px}.address{font-size:14px}.states div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #242424;font-size:12px;color:#999}.states b{color:#ddd}.states b.alert{color:#e82127}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.ctrl{min-height:60px;background:#232323;color:#fff;border:0;border-radius:13px;font-size:10px}.ctrl.on{background:#252d3a}.ctrl span{display:block;font-size:17px;margin-bottom:6px}.climate{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;color:#888;font-size:10px}.climate b,.chargegrid b{display:block;color:#fff;font-size:12px;margin-top:4px}.chargegrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.chargegrid span{background:#232323;border-radius:11px;padding:10px;color:#888;font-size:10px}label{display:grid;grid-template-columns:1fr auto;gap:5px;color:#888;font-size:11px;margin-top:12px}label b{color:#fff}label input{grid-column:1/-1;width:100%;accent-color:#e82127}.route{width:100%;height:170px;background:#101010;border-radius:14px}.map-empty{background:#101010;color:#666;border-radius:14px;padding:22px;text-align:center;font-size:11px}.empty{padding:20px;color:#888}</style><div class="wrap">'+body+'</div>';
     const w=this.shadowRoot.querySelector(".wrap");w.onclick=e=>this._onClick(e);w.onchange=e=>this._onChange(e);
   }
 }
