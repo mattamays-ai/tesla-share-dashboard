@@ -1,4 +1,4 @@
-// Tesla Share - one card, every car on tesla_custom or tesla_fleet.
+// Tesla Share - every Tesla, as a card or Tesla-style dashboard.
 const PLATFORMS = new Set(["tesla_custom", "tesla_fleet"]);
 const VEHICLE_IMGS={
   "model 3":"https://digitalassets.tesla.com/tesla-contents/image/upload/e_bgremoval,f_png,q_auto:best,w_900/Meet-Your-Tesla_Model-3.jpg",
@@ -53,14 +53,24 @@ async function loadTeslaRegistry(hass) {
   }
 
   const entities = entityResponse
-    .map((meta) => ({
-      id: meta?.ei || meta?.entity_id || null,
-      platform: String(meta?.pl || meta?.platform || "").toLowerCase(),
-      device_id: meta?.di || meta?.device_id || null,
-      name: meta?.en || meta?.name || "",
-      state: meta?.ei ? hass.states?.[meta.ei] : hass.states?.[meta?.entity_id],
-    }))
-    .filter((e) => e.id && e.state && PLATFORMS.has(e.platform));
+    .map((meta) => {
+      const id = meta?.ei || meta?.entity_id || null;
+      const state = meta?.ei ? hass.states?.[meta.ei] : hass.states?.[meta?.entity_id];
+      const platform = String(meta?.pl || meta?.platform || "").toLowerCase();
+      const attribution = String(state?.attributes?.attribution || "");
+      const teslaEntityDomain = /^(binary_sensor|button|climate|cover|device_tracker|lock|number|select|sensor|switch)\\./i.test(String(id || ""));
+      const teslaEntityName = /\\btesla\\b/i.test(String(id || ""));
+      const teslaSignature = /\\btesla\\b/i.test(attribution) || (teslaEntityDomain && teslaEntityName);
+      return {
+        id,
+        platform,
+        device_id: meta?.di || meta?.device_id || null,
+        name: meta?.en || meta?.name || "",
+        state,
+        teslaSignature,
+      };
+    })
+    .filter((e) => e.id && e.state && (PLATFORMS.has(e.platform) || e.teslaSignature));
 
   const devices = {};
   for (const device of rawDevices) {
@@ -869,5 +879,5 @@ window.customCards = window.customCards || [];
 if(!window.customCards.some(c=>c.type==="tesla-share-card"))window.customCards.push({
   type: "tesla-share-card",
   name: "Tesla Share",
-  description: "Every Tesla on tesla_custom or tesla_fleet. No entity ids.",
+  description: "Every Tesla, automatically discovered. Card or Tesla-style dashboard. No entity ids.",
 });
