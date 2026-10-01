@@ -265,95 +265,102 @@ class TeslaShareCard extends HTMLElement {
     const paint=this._color(car),m=car.model||"Tesla";
     const cyber=/cybertruck/i.test(m),x=/model x/i.test(m),y=/model y/i.test(m),s=/model s/i.test(m),road=/roadster/i.test(m);
     const uid=(car.device_id||car.id||"tesla").replace(/[^a-z0-9]/gi,"");
-    const bodyId="body-"+uid,glassId="glass-"+uid,shineId="shine-"+uid,wheelId="wheel-"+uid;
+    const ids={body:"body-"+uid,glass:"glass-"+uid,shine:"shine-"+uid,wheel:"wheel-"+uid,ground:"ground-"+uid};
     const body=cyber
-      ?"M58 151L91 117L168 83L390 69L486 78L548 111L587 143L568 164H74Z"
+      ?"M58 154L83 128L112 119L169 82L390 68L468 78L526 104L579 143L566 168H72Z"
       :x
-      ?"M42 151C58 119 94 91 155 77C222 61 345 62 421 73C494 83 549 112 596 145L568 166H67Z"
+      ?"M42 153C55 124 81 102 120 87C166 69 221 64 294 65L402 70C476 76 531 104 586 143L568 169H68Z"
       :y
-      ?"M44 151C59 116 98 88 160 74C228 59 351 62 426 75C496 87 551 113 598 146L568 166H68Z"
+      ?"M43 153C56 119 89 94 137 79C184 64 250 59 316 61L404 69C477 78 532 107 588 144L569 168H68Z"
       :s
-      ?"M43 151C60 116 102 88 171 73C238 59 354 63 428 76C500 88 552 113 598 146L568 166H68Z"
+      ?"M43 153C61 119 99 91 151 76C213 58 294 58 364 63L428 74C494 86 544 109 590 144L569 168H68Z"
       :road
-      ?"M45 151C69 112 120 84 190 75C264 65 363 69 431 80C500 91 551 114 598 146L568 166H68Z"
-      :"M44 151C63 116 106 88 175 73C244 59 354 63 428 76C500 88 552 113 598 146L568 166H68Z";
+      ?"M47 153C70 112 124 82 190 72C264 61 351 65 425 77C495 89 548 113 593 145L568 168H68Z"
+      :"M43 153C60 117 101 90 158 75C222 58 301 59 371 64L431 75C496 87 546 110 590 145L569 168H68Z";
     const glass=cyber
-      ?"M94 116L168 84L388 71L471 81L532 111L548 120H94Z"
-      :(x
-        ?"M116 111C148 88 194 74 246 70L407 75C459 79 503 94 543 113L565 129H104Z"
-        :"M116 111C153 87 199 73 250 69L409 75C462 80 507 96 548 116L565 129H105Z");
+      ?"M99 119L168 84L389 71L468 81L527 108L548 124H99Z"
+      :x
+      ?"M102 119C130 95 169 80 219 72C278 63 353 65 411 75C466 84 511 101 548 122L570 135H96Z"
+      :y
+      ?"M103 119C132 93 174 78 226 70C286 61 351 64 412 75C468 84 511 102 550 123L569 135H96Z"
+      :s
+      ?"M112 116C143 91 188 76 239 69C298 61 353 64 408 75C464 85 507 102 548 123L569 136H104Z"
+      :road
+      ?"M112 116C145 91 190 77 244 71C305 64 359 67 414 77C466 87 511 103 550 123L570 136H104Z"
+      :"M110 116C143 90 188 76 239 69C300 61 355 64 410 75C466 85 508 102 549 123L570 136H103Z";
     const roof=cyber
-      ?"M168 84L389 71L469 81L420 101L201 100Z"
-      :(x||y
-        ?"M171 84C230 66 349 67 420 77L500 106L204 103Z"
-        :"M184 83C245 65 349 67 421 78L497 108L214 104Z");
+      ?"M169 84L390 71L468 81L423 102L202 101Z"
+      :x
+      ?"M157 91C213 69 320 64 408 77L496 108L210 104Z"
+      :y
+      ?"M157 87C220 66 335 65 414 77L500 109L204 105Z"
+      :s
+      ?"M170 84C232 64 342 65 416 77L500 109L210 104Z"
+      :road
+      ?"M178 82C246 66 345 68 417 79L495 108L216 104Z"
+      :"M170 83C235 63 345 65 417 77L500 109L211 104Z";
     const lower=cyber
-      ?"M73 145L566 145L568 165H68Z"
-      :"M70 143C197 153 438 154 568 143L568 165H68Z";
+      ?"M72 145L568 145L566 168H68Z"
+      :"M68 144C192 156 441 157 570 144L569 168H68Z";
     const wheel=(cx,cyy,scale=1)=>'<g transform="translate('+cx+' '+cyy+') scale('+scale+')">'+
-      '<ellipse rx="31" ry="34" fill="#050505" stroke="#2a2a2a" stroke-width="3"/>'+
-      '<circle r="25" fill="url(#'+wheelId+')"/>'+
-      '<circle r="20" fill="#15171a" stroke="#555" stroke-width="1.5"/>'+
-      '<path d="M0-18L5-4L18-3L7 4L11 17L0 9L-11 17L-7 4L-18-3L-5-4Z" fill="#73777b"/>'+
-      '<circle r="5" fill="#17191b" stroke="#8b8d90" stroke-width="1.5"/>'+
+      '<ellipse rx="34" ry="37" fill="#030405" stroke="#30343a" stroke-width="3"/>'+
+      '<circle r="27" fill="url(#'+ids.wheel+')"/>'+
+      '<circle r="22" fill="#17191c" stroke="#666a6f" stroke-width="1.5"/>'+
+      '<path d="M0-19L5-5L19-3L7 5L11 19L0 10L-11 19L-7 5L-19-3L-5-5Z" fill="#85898d"/>'+
+      '<circle r="5" fill="#111317" stroke="#a5a7aa" stroke-width="1.5"/>'+
       '</g>';
+    const wheelPos=cyber?[174,468]:x?[173,474]:y?[174,470]:s?[175,474]:road?[177,470]:[174,472];
     const seams=cyber
-      ?'<path d="M275 83L276 145M393 79L400 145" class="seam"/>'
-      :'<path d="M285 76L284 145M383 77L386 145" class="seam"/>';
+      ?'<path d="M275 83L276 145M393 79L400 145M169 117L468 119" class="seam"/><path d="M91 130L160 112M468 112L549 130" class="seam faint"/>'
+      :x
+      ?'<path d="M276 72L275 145M393 76L397 145M132 119C231 131 421 131 545 119" class="seam"/>'
+      :'<path d="M286 70L284 145M383 74L386 145M128 121C240 132 423 132 549 121" class="seam"/>';
     const lights=cyber
-      ?'<path d="M93 132L124 124" class="head"/><path d="M536 123L557 130" class="tail"/>'
-      :'<path d="M89 132L127 122" class="head"/><path d="M541 121L565 130" class="tail"/>';
-    const handles=cyber?"":'<path d="M287 113h19M382 112h18" class="handle"/>';
-    const openParts=open
-      ?'<path d="M175 112L143 57L181 50L209 111" class="open-panel"/><path d="M472 113L505 70L530 81L512 119" class="open-panel"/>'
+      ?'<path d="M88 134L127 123L146 125L121 136Z" class="head"/><path d="M533 123L560 132L548 137L527 129Z" class="tail"/>'
+      :'<path d="M86 133L126 121L149 124L123 136Z" class="head"/><path d="M535 122L565 132L549 138L529 129Z" class="tail"/>';
+    const mirrors=cyber?"":'<path d="M119 113L101 108L94 115L116 120Z" class="mirror"/><path d="M529 111L548 106L556 113L532 119Z" class="mirror"/>';
+    const handles=cyber?"":'<path d="M289 112h18M383 111h18" class="handle"/>';
+    const panels=open
+      ?(x||y
+        ?'<path d="M176 112L146 52L183 45L210 109" class="open-panel"/><path d="M474 113L506 68L532 80L514 119" class="open-panel"/>'
+        :'<path d="M178 113L146 58L181 51L209 111" class="open-panel"/><path d="M474 113L505 70L529 81L512 119" class="open-panel"/>')
       :"";
     const cable=charging
-      ?'<path d="M111 136C87 157 84 177 108 189C139 204 168 194 185 177" class="cable"/><circle cx="111" cy="136" r="7" class="charge-dot"/>'
-      :'<circle cx="111" cy="136" r="7" class="charge-dot"/>';
-    return '<svg viewBox="0 0 640 220" class="car-svg '+(charging?"charging ":"")+(open?"open ":"")+(cyber?"cyber":"")+'" role="img" aria-label="'+esc(m)+'">'+
+      ?'<path d="M111 137C83 157 84 181 112 191C143 202 173 193 190 174" class="cable"/><circle cx="111" cy="137" r="7" class="charge-dot"/>'
+      :'<circle cx="111" cy="137" r="7" class="charge-dot"/>';
+    const badge=cyber
+      ?'<text x="320" y="139" class="model-badge">CYBERTRUCK</text>'
+      :"";
+    return '<svg viewBox="0 0 640 220" class="car-svg '+(charging?"charging ":"")+(open?"open ":"")+(cyber?"cyber ":"")+(x?"model-x ":y?"model-y ":s?"model-s ":road?"roadster ":"model-3 ")+'" role="img" aria-label="'+esc(m)+'">'+
       '<defs>'+
-      '<linearGradient id="'+bodyId+'" x1="0" y1="0" x2="0.85" y2="1">'+
-      '<stop offset="0" stop-color="'+paint+'" stop-opacity=".99"/>'+
-      '<stop offset=".36" stop-color="'+paint+'"/>'+
-      '<stop offset=".72" stop-color="#16191d"/>'+
-      '<stop offset="1" stop-color="#050607"/>'+
+      '<linearGradient id="'+ids.body+'" x1="0" y1="0" x2=".92" y2="1">'+
+      '<stop offset="0" stop-color="'+paint+'" stop-opacity=".99"/><stop offset=".3" stop-color="'+paint+'"/><stop offset=".58" stop-color="#4d5358"/><stop offset=".78" stop-color="#15181c"/><stop offset="1" stop-color="#030405"/>'+
       '</linearGradient>'+
-      '<linearGradient id="'+glassId+'" x1="0" y1="0" x2=".8" y2="1">'+
-      '<stop offset="0" stop-color="#65707a" stop-opacity=".68"/>'+
-      '<stop offset=".28" stop-color="#202a34" stop-opacity=".94"/>'+
-      '<stop offset=".75" stop-color="#080c11" stop-opacity=".98"/>'+
-      '<stop offset="1" stop-color="#020406"/>'+
+      '<linearGradient id="'+ids.glass+'" x1="0" y1="0" x2=".9" y2="1">'+
+      '<stop offset="0" stop-color="#87929c" stop-opacity=".62"/><stop offset=".25" stop-color="#303c47" stop-opacity=".9"/><stop offset=".65" stop-color="#0c1218" stop-opacity=".98"/><stop offset="1" stop-color="#020305"/>'+
       '</linearGradient>'+
-      '<linearGradient id="'+shineId+'" x1="0" y1="0" x2="1" y2="0">'+
-      '<stop offset="0" stop-color="#fff" stop-opacity="0"/>'+
-      '<stop offset=".45" stop-color="#fff" stop-opacity=".38"/>'+
-      '<stop offset=".7" stop-color="#fff" stop-opacity=".08"/>'+
-      '<stop offset="1" stop-color="#fff" stop-opacity="0"/>'+
-      '</linearGradient>'+
-      '<radialGradient id="'+wheelId+'">'+
-      '<stop offset="0" stop-color="#9b9da0"/><stop offset=".32" stop-color="#414449"/><stop offset=".72" stop-color="#17191c"/><stop offset="1" stop-color="#08090a"/>'+
-      '</radialGradient>'+
+      '<linearGradient id="'+ids.shine+'" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".42" stop-color="#fff" stop-opacity=".48"/><stop offset=".66" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>'+
+      '<radialGradient id="'+ids.wheel+'"><stop offset="0" stop-color="#b7babd"/><stop offset=".3" stop-color="#555a60"/><stop offset=".68" stop-color="#202328"/><stop offset="1" stop-color="#08090a"/></radialGradient>'+
+      '<radialGradient id="'+ids.ground+'"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".55" stop-color="#fff" stop-opacity=".045"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>'+
+      '<filter id="blur-'+uid+'"><feGaussianBlur stdDeviation="7"/></filter>'+
       '</defs>'+
-      '<ellipse cx="327" cy="177" rx="272" ry="16" fill="#000" opacity=".68"/>'+
-      '<ellipse cx="320" cy="169" rx="230" ry="10" fill="#fff" opacity=".035"/>'+
-      '<path class="body" d="'+body+'" fill="url(#'+bodyId+')" stroke="#fff" stroke-opacity=".22" stroke-width="1.7"/>'+
-      '<path d="'+lower+'" fill="#030405" opacity=".62"/>'+
-      '<path class="glass" d="'+glass+'" fill="url(#'+glassId+')" stroke="#030406" stroke-width="4"/>'+
-      '<path d="'+roof+'" fill="#05080c" opacity=".56" stroke="#8d969e" stroke-opacity=".14" stroke-width="1"/>'+
-      '<path d="M126 109C205 88 407 88 548 117" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>'+
-      '<path d="M102 124C219 111 405 110 558 127" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width="2"/>'+
-      '<path d="M151 94C235 78 371 80 467 94" fill="none" stroke="url(#'+shineId+')" stroke-width="7" opacity=".45"/>'+
-      seams+
-      handles+
-      '<path d="M104 122L133 115M516 114L548 122" stroke="'+paint+'" stroke-width="6" stroke-linecap="round" opacity=".9"/>'+
-      '<path d="M100 130L129 123" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".8"/>'+
-      lights+
-      '<path d="M'+(cyber?114:124)+' 146C250 157 439 157 548 145" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="2"/>'+
-      wheel(174,158,1)+wheel(468,158,1)+
-      cable+
-      openParts+
-      '<circle cx="111" cy="136" r="12" fill="none" stroke="#fff" stroke-opacity=".1"/>'+
-      '<path class="bolt" d="M249 119h28l-8 16h20l-33 39 8-24h-22z" fill="#fff" opacity="'+(charging?".95":"0")+'"/>'+
+      '<ellipse cx="325" cy="184" rx="278" ry="19" fill="#000" opacity=".72"/>'+
+      '<ellipse cx="325" cy="177" rx="220" ry="13" fill="url(#'+ids.ground+')" filter="url(#blur-'+uid+')"/>'+
+      '<path d="M66 178H575" stroke="#fff" stroke-opacity=".035" stroke-width="1"/>'+
+      '<path class="body" d="'+body+'" fill="url(#'+ids.body+')" stroke="#fff" stroke-opacity=".24" stroke-width="1.8"/>'+
+      '<path d="'+lower+'" fill="#020304" opacity=".58"/>'+
+      '<path class="glass" d="'+glass+'" fill="url(#'+ids.glass+')" stroke="#05070a" stroke-width="4"/>'+
+      '<path d="'+roof+'" fill="#030507" opacity=".62" stroke="#aab0b6" stroke-opacity=".16" stroke-width="1"/>'+
+      '<path d="M116 113C208 86 416 88 550 121" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>'+
+      '<path d="M101 125C222 111 421 111 560 128" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width="2"/>'+
+      '<path d="M150 94C237 75 375 78 470 96" fill="none" stroke="url(#'+ids.shine+')" stroke-width="8" opacity=".5"/>'+
+      seams+mirrors+handles+lights+
+      '<path d="M102 145C229 158 435 159 555 145" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="2"/>'+
+      wheel(wheelPos[0],158,1)+wheel(wheelPos[1],158,1)+
+      cable+panels+
+      '<circle cx="111" cy="137" r="12" fill="none" stroke="#fff" stroke-opacity=".12"/>'+
+      '<path class="bolt" d="M249 119h28l-8 16h20l-33 39 8-24h-22z" fill="#fff" opacity="'+(charging?".98":"0")+'"/>'+
+      badge+
       '</svg>';
   }
   _swatches(car,i){
