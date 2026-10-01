@@ -1,0 +1,6 @@
+{
+  "name": "Tesla Share",
+  "filename": "tesla-share-card.js",
+  "render_readme": true,
+  "homeassistant": "2024.8.0"
+}
